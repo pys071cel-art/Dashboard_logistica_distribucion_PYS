@@ -6,14 +6,14 @@ import requests
 import io
 from PIL import Image
 
-# Intentar cargar el logo corporativo con manejo de excepción por seguridad
+# Intentar cargar el logo corporativo
 try:
-    logo = Image.open("logo_PYS.jpg")
+    logo = Image.open("logo_PYS.jpeg")
 except Exception:
     logo = None
 
 # =========================================================================
-# 1. CONFIGURACIÓN DE PÁGINA (Estilo Corporativo Premium)
+# 1. CONFIGURACIÓN DE PÁGINA
 # =========================================================================
 st.set_page_config(
     page_title="Logística de Distribución - PYS",
@@ -23,13 +23,13 @@ st.set_page_config(
 )
 
 # =========================================================================
-# 2. ESTILO CSS AVANZADO UI/UX (Executive Dark & Light Cohesive)
+# 2. ESTILO CSS AVANZADO UI/UX
 # =========================================================================
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=400;500;600;700&display=swap');
     
-    /* Global Container */
+    /* Contenedor Global */
     .block-container { 
         padding-top: 1.5rem; 
         padding-bottom: 2rem; 
@@ -39,7 +39,7 @@ st.markdown("""
     
     h1, h2, h3, h4 { color: #0F172A; font-weight: 700; letter-spacing: -0.02em; }
     
-    /* 📈 TARJETAS KPI SUPERIORES */
+    /* 📈 TARJETAS KPI */
     .kpi-card-premium {
         background-color: #FFFFFF;
         padding: 22px;
@@ -54,7 +54,7 @@ st.markdown("""
     .kpi-val-p { font-size: 30px; font-weight: 700; color: #1E293B; line-height: 1; }
     .kpi-lbl-p { font-size: 11px; color: #64748B; text-transform: uppercase; margin-top: 8px; letter-spacing: 0.05em; font-weight: 600; }
     
-    /* 📋 FILAS DE TRAZABILIDAD EXECUTIVE */
+    /* 📋 FILAS DE TRAZABILIDAD */
     .timeline-container-p {
         background-color: #FFFFFF; 
         border: 1px solid #E2E8F0; 
@@ -72,16 +72,65 @@ st.markdown("""
         box-shadow: 0 10px 15px -3px rgba(0,0,0,0.04);
         border-color: #CBD5E1;
     }
+    .timeline-left {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
     .op-badge-p { 
         background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%); 
         color: white; 
-        padding: 8px 16px; 
+        padding: 12px 0px; 
         font-weight: 700; 
-        border-radius: 8px; 
+        border-radius: 10px; 
         font-size: 14px; 
+        width: 54px;
+        text-align: center;
+        flex-shrink: 0;
+    }
+    .timeline-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .timeline-main-text {
+        font-size: 14px;
+        color: #1E293B;
+        font-weight: 600;
+    }
+    .timeline-sub-text {
+        font-size: 13px;
+        color: #64748B;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+    .timeline-right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+        font-size: 13px;
+    }
+    .timeline-eta {
+        color: #64748B;
+        font-weight: 500;
     }
     
-    /* ⏳ SEMÁFOROS FINANCIEROS */
+    /* BADGES DE ESTADO */
+    .status-badge {
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-align: center;
+    }
+    .status-entregado { background-color: #DCFCE7; color: #15803D; }
+    .status-transito { background-color: #FEF3C7; color: #B45309; }
+    .status-despachar { background-color: #FFEDD5; color: #C2410C; }
+    .status-proceso { background-color: #F1F5F9; color: #475569; }
+    
+    /* ⏳ SISTEMA DE SEMÁFOROS MÓDULO 2 */
     .semaforo-box-p { 
         padding: 12px 18px; 
         border-radius: 10px; 
@@ -91,12 +140,16 @@ st.markdown("""
         justify-content: space-between; 
         align-items: center;
         font-weight: 500;
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        color: #1E293B;
     }
-    .status-g-p { background-color: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; border-left: 5px solid #10B981; }
-    .status-y-p { background-color: #FFFBEB; border: 1px solid #FDE68A; color: #92400E; border-left: 5px solid #F59E0B; }
-    .status-r-p { background-color: #FEF2F2; border: 1px solid #FEE2E2; color: #991B1B; border-left: 5px solid #EF4444; }
+    .sem-verde { border-left: 5px solid #10B981; background-color: #F0FDF4; }
+    .sem-amarillo { border-left: 5px solid #F59E0B; background-color: #FEF3C7; }
+    .sem-rojo { border-left: 5px solid #EF4444; background-color: #FEF2F2; }
+    .sem-gris { border-left: 5px solid #64748B; background-color: #F8FAFC; }
     
-    /* 🚚 ESTRUCTURA INYECTADA DE CONTENEDORES (FIXED COMPONENT) */
+    /* 🚚 TARJETAS DE CONTENEDORES */
     .container-box-p { 
         background: #FFFFFF; 
         border: 1px solid #E2E8F0; 
@@ -137,7 +190,7 @@ st.markdown("""
     .product-subtitle-p { font-weight: 500; color: #64748B; }
     .product-meta-p { font-size: 12px; color: #475569; font-weight: 500; display: flex; gap: 8px; align-items: center; }
 
-    /* 🚨 TARJETAS DIDÁCTICAS: POR DESPACHAR */
+    /* 🚨 TARJETAS EN FABRICACIÓN */
     .dispatch-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -147,20 +200,24 @@ st.markdown("""
     .dispatch-card-premium {
         background: #FFFFFF;
         border: 1px solid #E2E8F0;
-        border-left: 6px solid #F59E0B;
+        border-left: 6px solid #EA580C; 
         border-radius: 12px;
         padding: 20px;
         box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
         transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: auto;
     }
     .dispatch-card-premium:hover {
         transform: translateY(-3px);
-        box-shadow: 0 12px 20px -3px rgba(245, 158, 11, 0.08);
-        border-color: #FCD34D;
+        box-shadow: 0 12px 20px -3px rgba(234, 88, 12, 0.1);
+        border-color: #F97316;
     }
     .dispatch-tag {
-        background-color: #FEF3C7;
-        color: #D97706;
+        background-color: #FFEDD5; 
+        color: #C2410C; 
         font-size: 11px;
         font-weight: 700;
         padding: 4px 10px;
@@ -168,9 +225,33 @@ st.markdown("""
         text-transform: uppercase;
         display: inline-block;
         margin-bottom: 12px;
+        width: fit-content;
     }
-    .dispatch-model { font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 4px; }
-    .dispatch-desc { font-size: 13px; color: #475569; line-height: 1.4; margin-bottom: 12px; }
+    .dispatch-model { font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 8px; }
+    
+    /* CONTENEDOR DE ÍTEMS LIMPIOS */
+    .dispatch-items-list {
+        margin: 0 0 14px 0;
+        padding: 0;
+        list-style: none;
+    }
+    .dispatch-item-line {
+        font-size: 13px;
+        color: #475569;
+        line-height: 1.5;
+        position: relative;
+        padding-left: 14px;
+        margin-bottom: 4px;
+    }
+    .dispatch-item-line::before {
+        content: "•";
+        color: #EA580C;
+        font-weight: bold;
+        position: absolute;
+        left: 0;
+        top: 0;
+    }
+
     .dispatch-meta-row { 
         display: flex; 
         justify-content: space-between; 
@@ -183,59 +264,42 @@ st.markdown("""
     .dispatch-date {
         margin-top: 12px;
         font-size: 12.5px;
-        color: #EF4444;
+        color: #64748B;
         font-weight: 600;
         display: flex;
         align-items: center;
         gap: 6px;
     }
 
-    /* 🧭 SIDEBAR PREMIUM COMPONENT */
+    /* 🧭 SIDEBAR */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
         color: #F1F5F9;
+        min-width: 300px !important;
+        max-width: 300px !important;
     }
+    [data-testid="stSidebarResizer"] { display: none !important; }
     [data-testid="stSidebar"] h2, [data-testid="stSidebar"] p { color: #FFFFFF !important; }
     [data-testid="stSidebar"] .stRadio > label { color: #94A3B8 !important; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
     
-    /* Custom Sidebar Radio Buttons Style */
-    div.row-widget.stRadio > div {
-        background-color: transparent !important;
-        gap: 6px;
-    }
     div.row-widget.stRadio div[role="radiogroup"] label {
         background: rgba(255, 255, 255, 0.03) !important;
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         padding: 12px 16px !important;
         border-radius: 10px !important;
         color: #E2E8F0 !important;
-        transition: all 0.2s ease;
         width: 100%;
-    }
-    div.row-widget.stRadio div[role="radiogroup"] label:hover {
-        background: rgba(255, 255, 255, 0.08) !important;
-        border-color: rgba(255, 255, 255, 0.2) !important;
     }
     div.row-widget.stRadio div[role="radiogroup"] label[data-checked="true"] {
         background: #3B82F6 !important;
         border-color: #3B82F6 !important;
         color: #FFFFFF !important;
-        font-weight: 600;
-    }
-    
-    .sidebar-footer-p { 
-        font-size: 11px; 
-        color: #64748B; 
-        text-align: left; 
-        margin-top: 40px; 
-        padding-top: 20px; 
-        border-top: 1px solid rgba(255,255,255,0.08); 
     }
     </style>
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# 3. CONEXIÓN CORPORATIVA (ONEDRIVE - GRAPH API)
+# 3. CONEXIÓN CORPORATIVA (ONEDRIVE)
 # =========================================================================
 def ejecutar_sincronizacion_onedrive():
     resultado = {"df_plan": None, "df_maestro": None, "error": None}
@@ -261,23 +325,14 @@ def ejecutar_sincronizacion_onedrive():
             
         token = res_token.json().get("access_token")
         headers = {'Authorization': f'Bearer {token}'}
-        
         user_principal_name = "planeacion.proyectos@proyectosyservicios.net"
         
-        # Descarga total del Maestro
         url_m = f"https://graph.microsoft.com/v1.0/users/{user_principal_name}/drive/items/{file_maestro_id}/content"
         res_m = requests.get(url_m, headers=headers, timeout=15)
-        if res_m.status_code != 200:
-            resultado["error"] = "Error al descargar el archivo Maestro desde OneDrive."
-            return resultado
-            
-        # Descarga total del Plan
+        
         url_p = f"https://graph.microsoft.com/v1.0/users/{user_principal_name}/drive/items/{file_plan_id}/content"
         res_p = requests.get(url_p, headers=headers, timeout=15)
-        if res_p.status_code != 200:
-            resultado["error"] = "Error al descargar el archivo de Planificación desde OneDrive."
-            return resultado
-            
+        
         df_m = pd.read_excel(io.BytesIO(res_m.content), sheet_name="BASE_DATOS_MAESTRO")
         df_p = pd.read_excel(io.BytesIO(res_p.content), sheet_name="Hoja1")
             
@@ -294,7 +349,6 @@ def ejecutar_sincronizacion_onedrive():
         
     except Exception as e_global:
         resultado["error"] = f"Excepción del sistema de enlace: {e_global}"
-        
     return resultado
 
 @st.cache_data(ttl=300)
@@ -307,7 +361,7 @@ df_maestro = data_response["df_maestro"]
 error_detectado = data_response["error"]
 
 # =========================================================================
-# 4. MENÚ LATERAL DE NAVEGACIÓN RECONSTRUIDO EXECUTIVE
+# 4. MENÚ LATERAL
 # =========================================================================
 with st.sidebar:
     st.write("")
@@ -317,11 +371,11 @@ with st.sidebar:
         st.markdown("<h2 style='margin-bottom:0px; font-size:22px;'>PROYECTOS Y SERVICIOS</h2>", unsafe_allow_html=True)
         
     st.markdown("<p style='color:#94A3B8; font-size:13px; margin-top:2px; margin-bottom:25px;'>Control e Inteligencia Logística</p>", unsafe_allow_html=True)
-    
     st.markdown("<label style='color:#94A3B8; font-size:11px; font-weight:600; letter-spacing:0.05em;'>MÓDULOS DEL SISTEMA</label>", unsafe_allow_html=True)
+    
     menu = st.radio(
         "Módulos Estratégicos:",
-        ["📈 Trazabilidad e Historial", "🔍 Detalle de Operación", "🚨 Alertas: Por Despachar"],
+        ["📈 Trazabilidad e Historial", "🔍 Detalle de Operación", "🚨 Referencias en Producción"],
         label_visibility="collapsed"
     )
     
@@ -329,49 +383,57 @@ with st.sidebar:
     if st.button("🔄 Sincronizar Datos Nube", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-        
+
     st.markdown("""
-        <div class="sidebar-footer-p" style="text-align: center; width: 100%;">
-            <strong>Proyectos y Servicios SAS</strong><br>
-            Área de planeación y Distribución<br>
-            <span style='font-size:10px; color:#475569;'>Enterprise System v4.0</span>
-        </div>
-    """, unsafe_allow_html=True)
+        <div class="sidebar-footer-p" style="
+            width: 100%;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding-top: 15px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #475569;
+            font-size: 12px;
+            font-family: sans-serif;
+        ">
+        <strong style="color: #475569;">Proyectos y Servicios SAS</strong><br>
+        Área de planeación y Distribución<br>
+        <span style='font-size:10px; color:#475569;'>Enterprise System v4.0</span>
+        </div> """, unsafe_allow_html=True)
 
 # =========================================================================
-# 5. CONTROL DE PANTALLA PRINCIPAL
+# 5. PANTALLA PRINCIPAL
 # =========================================================================
 if error_detectado is not None:
-    st.title("🔧 Diagnóstico de Conexión")
     st.error(error_detectado)
 
 elif df_plan is not None and df_maestro is not None:
     fecha_hoy = datetime.now()
 
-    # --- MÓDULO 1: TRAZABILIDAD GLOBAL ---
+    # --- ENCONTRAR COLUMNA COP ---
+    col_cop_name = next((n for n in ['VALOR_NACIONALIZADO', 'VALOR NACIONALIZADO COP', 'VALOR_NACIONALIZADO_COP', 'VALOR NACIONALIZADO'] if n in df_maestro.columns), None)
+
+    # --- MÓDULO 1: TRAZABILIDAD E HISTORIAL ---
     if menu == "📈 Trazabilidad e Historial":
-        st.title("Control General de Operaciones")
+        st.title("Control general de operaciones")
         st.markdown("<p style='color: #64748B; font-size:14px;'>Consolidado estratégico de importaciones e historial analítico de costos.</p>", unsafe_allow_html=True)
         st.write("---")
         
-        total_usd_comprado = df_maestro['VALOR TOTAL (USD)'].sum() if 'VALOR TOTAL (USD)' in df_maestro.columns else 0
-        total_contenedores_global = df_maestro['CONTENEDOR'].nunique() if 'CONTENEDOR' in df_maestro.columns else 0
-        total_unidades_global = df_maestro['CANTIDAD'].sum() if 'CANTIDAD' in df_maestro.columns else 0
-        
         ckpi1, ckpi2, ckpi3 = st.columns(3)
-        with ckpi1:
-            st.markdown(f'<div class="kpi-card-premium kpi-blue"><div class="kpi-val-p">USD {total_usd_comprado:,.2f}</div><div class="kpi-lbl-p">Inversión Total Equipos</div></div>', unsafe_allow_html=True)
-        with ckpi2:
-            st.markdown(f'<div class="kpi-card-premium kpi-indigo"><div class="kpi-val-p">{total_contenedores_global}</div><div class="kpi-lbl-p">Contenedores Gestión</div></div>', unsafe_allow_html=True)
-        with ckpi3:
-            st.markdown(f'<div class="kpi-card-premium kpi-emerald"><div class="kpi-val-p">{int(total_unidades_global):,}</div><div class="kpi-lbl-p">Unidades Globales Importadas</div></div>', unsafe_allow_html=True)
+        total_usd = df_maestro['VALOR TOTAL (USD)'].sum() if 'VALOR TOTAL (USD)' in df_maestro.columns else 0
+        total_conts = df_maestro['CONTENEDOR'].nunique() if 'CONTENEDOR' in df_maestro.columns else 0
+        total_unis = df_maestro['CANTIDAD'].sum() if 'CANTIDAD' in df_maestro.columns else 0
+        
+        with ckpi1: st.markdown(f'<div class="kpi-card-premium kpi-blue"><div class="kpi-val-p">USD {total_usd:,.2f}</div><div class="kpi-lbl-p">Inversión Total Equipos</div></div>', unsafe_allow_html=True)
+        with ckpi2: st.markdown(f'<div class="kpi-card-premium kpi-indigo"><div class="kpi-val-p">{total_conts}</div><div class="kpi-lbl-p">Contenedores Gestión</div></div>', unsafe_allow_html=True)
+        with ckpi3: st.markdown(f'<div class="kpi-card-premium kpi-emerald"><div class="kpi-val-p">{int(total_unis):,}</div><div class="kpi-lbl-p">Unidades Globales Importadas</div></div>', unsafe_allow_html=True)
             
-        st.subheader("📋 Estado Actual de Flujos Logísticos")
+        st.subheader("📋 Estado actual de flujos logísticos")
         
         if 'OPERACIÓN' in df_maestro.columns:
             ops_resumen = df_maestro.groupby('OPERACIÓN').agg({
-                'CONTENEDOR': 'nunique',
-                'CANTIDAD': 'sum',
+                'CONTENEDOR': 'nunique', 
+                'CANTIDAD': 'sum', 
                 'VALOR TOTAL (USD)': 'sum',
                 'ESTADO DE DISTRIBUCION': lambda x: str(x.dropna().iloc[0]).strip() if not x.dropna().empty else "En Proceso",
                 'ETA': lambda x: x.dropna().iloc[0] if not x.dropna().empty else pd.NaT
@@ -379,76 +441,123 @@ elif df_plan is not None and df_maestro is not None:
             
             for _, row in ops_resumen.iterrows():
                 eta_str = row['ETA'].strftime('%Y-%m-%d') if pd.notna(row['ETA']) else "Por Confirmar"
-                estado_dist = row['ESTADO DE DISTRIBUCION']
+                estado_texto = row['ESTADO DE DISTRIBUCION']
                 
-                badge_style = "background-color: #DCFCE7; color: #16A34A;" if "Entregado" in estado_dist else "background-color: #FEF3C7; color: #D97706;"
-                badge_html = f'<span style="{badge_style} padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight:600;">{estado_dist}</span>'
-
-                st.markdown(f"""
+                estado_clean = estado_texto.lower().replace('á', 'a')
+                if 'entregado' in estado_clean:
+                    clase_badge = "status-entregado"
+                elif 'transito' in estado_clean:
+                    clase_badge = "status-transito"
+                elif 'despachar' in estado_clean:
+                    clase_badge = "status-despachar"
+                else:
+                    clase_badge = "status-proceso"
+                
+                html_linea_trazabilidad = f"""
                 <div class="timeline-container-p">
-                    <div style="display: flex; align-items: center; gap: 24px;">
+                    <div class="timeline-left">
                         <div class="op-badge-p">{row['OPERACIÓN']}</div>
-                        <div>
-                            <strong style="color: #0F172A; font-size: 15px;">Monto de Operación: USD {row['VALOR TOTAL (USD)']:,.2f}</strong><br>
-                            <span style="color: #64748B; font-size: 13px;">📦 {row['CONTENEDOR']} Contenedor(es) | 🔢 {int(row['CANTIDAD']):,} Equipos de Carga</span>
+                        <div class="timeline-info">
+                            <div class="timeline-main-text">Monto de Operación: USD {row['VALOR TOTAL (USD)']:,.2f}</div>
+                            <div class="timeline-sub-text">
+                                <span>📦 {row['CONTENEDOR']} Contenedor(es)</span>
+                                <span>|</span>
+                                <span>🔢 {int(row['CANTIDAD']):,} Equipos de Carga</span>
+                            </div>
                         </div>
                     </div>
-                    <div style="text-align: right;">
-                        <span style="font-size: 13px; color: #475569; font-weight: 500;">📅 ETA: {eta_str}</span><br>
-                        <div style="margin-top: 6px;">{badge_html}</div>
+                    <div class="timeline-right">
+                        <div class="timeline-eta">📅 ETA: {eta_str}</div>
+                        <div class="status-badge {clase_badge}">{estado_texto}</div>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
+                """
+                st.markdown(html_linea_trazabilidad, unsafe_allow_html=True)
 
         st.write("---")
         
-        st.subheader("📊 Gráficos Analíticos de Tendencia")
-        productos_disponibles = sorted(df_maestro['REFERENCIA/MODELO'].dropna().unique())
-        producto_sel = st.selectbox("Seleccione Referencia o Modelo a Evaluar:", productos_disponibles)
+        # HISTORIAL ANALÍTICO DE VARIACIÓN DE COSTOS
+        st.subheader("📊 Historial analítico de variaciones y costos de referencia")
+        st.markdown("<p style='color: #475569; font-size:13.5px; margin-top:-10px;'>Monitoreo de volatilidad de precios internacionales (USD) y comportamiento del costo nacionalizado (COP) indexado por operación.</p>", unsafe_allow_html=True)
         
+        productos_disponibles = sorted(df_maestro['REFERENCIA/MODELO'].dropna().unique())
+        producto_sel = st.selectbox("Seleccione la referencia o modelo a analizar:", productos_disponibles)
+        
+        # Filtrar por producto garantizando NO descartar filas por culpa de celdas COP vacías
         df_hist = df_maestro[df_maestro['REFERENCIA/MODELO'] == producto_sel].copy()
         df_hist = df_hist.dropna(subset=['EMISIÓN FRA', 'VALOR UNITARIO (USD)']).sort_values('EMISIÓN FRA')
         
         if not df_hist.empty:
-            col_cop_name = next((n for n in ['VALOR_NACIONALIZADO', 'VALOR NACIONALIZADO COP', 'VALOR_NACIONALIZADO_COP', 'VALOR NACIONALIZADO'] if n in df_maestro.columns), None)
             df_hist['Etiqueta_Grafico'] = df_hist.apply(lambda r: f"{r['OPERACIÓN']} ({r['EMISIÓN FRA'].strftime('%Y-%m-%d')})", axis=1)
             
+            # Limpieza segura de COP convirtiendo a numérico sin tumbar el DataFrame
+            def limpiar_pesos_colombia_enteros(valor):
+                if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '']:
+                    return None
+                val_str = str(valor).replace('$', '').replace(' ', '').replace(',', '').strip()
+                if '.' in val_str:
+                    # Si tiene punto decimal como separador de miles ficticio
+                    partes = val_str.split('.')
+                    if len(partes[-1]) == 2 and partes[-1].isdigit(): # Formato decimal estándar .00
+                        val_str = "".join(partes[:-1])
+                    else:
+                        val_str = val_str.replace('.', '')
+                return pd.to_numeric(val_str, errors='coerce')
+
+            if col_cop_name:
+                df_hist['COP_Grafico'] = df_hist[col_cop_name].apply(limpiar_pesos_colombia_enteros)
+            else:
+                df_hist['COP_Grafico'] = None
+
             cg1, cg2 = st.columns(2)
             with cg1:
                 fig_usd = px.line(df_hist, x='Etiqueta_Grafico', y='VALOR UNITARIO (USD)', markers=True, 
-                                  title="Evolución Costo Unitario (USD FOB/CIF)", color_discrete_sequence=['#1E3A8A'])
+                                  title="Evolución del costo unitario internacional (USD)", color_discrete_sequence=['#1E3A8A'])
                 fig_usd.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                                      xaxis=dict(showgrid=True, gridcolor='#E2E8F0'), yaxis=dict(showgrid=True, gridcolor='#E2E8F0'))
+                                      xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Operación"), yaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Valor USD"))
                 st.plotly_chart(fig_usd, use_container_width=True)
                 
             with cg2:
-                if col_cop_name and df_hist[col_cop_name].notna().any():
-                    df_hist['COP_Grafico'] = pd.to_numeric(df_hist[col_cop_name], errors='coerce')
-                    fig_cop = px.bar(df_hist, x='Etiqueta_Grafico', y='COP_Grafico', 
-                                     title="Historial de Costo Unitario Nacionalizado (COP)", color_discrete_sequence=['#059669'])
-                    fig_cop.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                                          xaxis=dict(showgrid=True, gridcolor='#E2E8F0'), yaxis=dict(showgrid=True, gridcolor='#E2E8F0'))
+                # Graficar barra limpia. Si hay valores nulos en COP se muestran vacíos en su tramo pero NO rompen la gráfica entera
+                df_barras_cop = df_hist.dropna(subset=['COP_Grafico'])
+                if not df_barras_cop.empty:
+                    fig_cop = px.bar(df_barras_cop, x='Etiqueta_Grafico', y='COP_Grafico', 
+                                     title="Variación del costo unitario nacionalizado final (COP)", color_discrete_sequence=['#059669'])
+                    fig_cop.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)', 
+                        paper_bgcolor='rgba(0,0,0,0)', 
+                        xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Operación"), 
+                        yaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Valor COP ($)", tickformat=",d")
+                    )
                     st.plotly_chart(fig_cop, use_container_width=True)
                 else:
-                    st.info("💡 Datos en COP no disponibles para el gráfico de esta referencia.")
+                    # Si no hay datos COP aún, renderizar un gráfico base vacío estilizado para mantener la simetría visual
+                    fig_vacío = px.bar(title="Variación del costo unitario nacionalizado final (COP)")
+                    fig_vacío.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_vacío, use_container_width=True)
             
-            st.markdown("**Desglose de Precios por Operación Histórica:**")
+            st.markdown("**Desglose detallado de precios por operación histórica:**")
             columnas_mostrar = ['OPERACIÓN', 'EMISIÓN FRA', 'FRA', 'VALOR UNITARIO (USD)']
-            if col_cop_name: columnas_mostrar.append(col_cop_name)
+            if col_cop_name: 
+                columnas_mostrar.append(col_cop_name)
+            
             df_resumen_tabla = df_hist[columnas_mostrar].drop_duplicates().copy()
             df_resumen_tabla['EMISIÓN FRA'] = df_resumen_tabla['EMISIÓN FRA'].dt.strftime('%Y-%m-%d')
-            st.dataframe(df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura'}), use_container_width=True, hide_index=True)
+            
+            # Formatear visualmente la tabla rellenando vacíos con 'None' idéntico a la maqueta original
+            if col_cop_name:
+                df_resumen_tabla[col_cop_name] = df_resumen_tabla[col_cop_name].apply(lambda x: "None" if pd.isna(x) or str(x).strip().lower()=='none' else x)
+                
+            st.dataframe(df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura', 'VALOR UNITARIO (USD)': 'VALOR UNITARIO (USD)'}), use_container_width=True, hide_index=True)
 
-    # --- MÓDULO 2: DETALLE DE OPERACIÓN E INVENTARIO (IMPECABLE RENDERING) ---
+    # --- MÓDULO 2: DETALLE DE OPERACIÓN ---
     elif menu == "🔍 Detalle de Operación":
-        st.title("Desglose Analítico por Operación")
+        st.title("Desglose analítico por operación")
         lista_ops = sorted(df_maestro['OPERACIÓN'].dropna().unique())
-        
         op_sel = st.selectbox("Seleccione el Código Operativo (M):", lista_ops, index=0)
         st.write("---")
         
         df_op = df_maestro[df_maestro['OPERACIÓN'] == op_sel].copy()
-        
         if not df_op.empty:
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -464,87 +573,63 @@ elif df_plan is not None and df_maestro is not None:
                 st.markdown(f"**💵 Flete Prorrateado:** USD {flete_tot / max(num_conts, 1):,.2f} por Contenedor")
 
             st.write("")
-            st.subheader("⏳ Semáforo de Vencimientos Financieros")
+            st.subheader("⏳ Control de vencimientos financieros")
             
-            def renderizar_semaforo(fecha_limite, titulo_tramo, descuento_label):
+            def renderizar_linea_vencimiento_semaforo(fecha_limite, tramo_label):
                 if pd.isna(fecha_limite):
-                    return f'<div class="semaforo-box-p status-y-p"><span>{titulo_tramo}</span><strong>Fecha no parametrizada</strong></div>'
+                    return f'<div class="semaforo-box-p sem-gris"><span>{tramo_label}</span><strong>Fecha no parametrizada</strong></div>'
                 dias_restantes = (fecha_limite - fecha_hoy).days
-                if dias_restantes > 15:
-                    clase_css, mensaje = "status-g-p", f"Vigente — Quedan {dias_restantes} días para el beneficio"
-                elif 0 <= dias_restantes <= 15:
-                    clase_css, mensaje = "status-y-p", f"Alerta de Cierre — Próximo a vencer ({dias_restantes} días restantes)"
+                if dias_restantes < 0:
+                    clase_sem = "sem-rojo"
+                    mensaje = f"Plazo vencido hace {abs(dias_restantes)} días"
+                elif dias_restantes <= 15:
+                    clase_sem = "sem-amarillo"
+                    mensaje = f"Alerta de vencimiento cercano — Quedan {dias_restantes} días"
                 else:
-                    clase_css, mensaje = "status-r-p", "Plazo Expirado"
-                    
-                return f'<div class="semaforo-box-p {clase_css}"><strong>{descuento_label} — {titulo_tramo}</strong><span>{mensaje} ({fecha_limite.strftime("%Y-%m-%d")})</span></div>'
+                    clase_sem = "sem-verde"
+                    mensaje = f"Plazo vigente y seguro — Quedan {dias_restantes} días"
+                return f'<div class="semaforo-box-p {clase_sem}"><strong>Vencimiento de pago — {tramo_label}</strong><span>{mensaje} ({fecha_limite.strftime("%Y-%m-%d")})</span></div>'
 
             if 'VENCIMIENTO 45 D - 2%' in df_op.columns:
-                st.markdown(renderizar_semaforo(df_op['VENCIMIENTO 45 D - 2%'].iloc[0], "Pronto Pago Inicial", "Descuento del 2%"), unsafe_allow_html=True)
+                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 45 D - 2%'].iloc[0], "Tramo 45 días (Descuento 2%)"), unsafe_allow_html=True)
             if 'VENCIMIENTO 69D 1.5%' in df_op.columns:
-                st.markdown(renderizar_semaforo(df_op['VENCIMIENTO 69D 1.5%'].iloc[0], "Segundo Tramo de Pago", "Descuento del 1.5%"), unsafe_allow_html=True)
+                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 69D 1.5%'].iloc[0], "Tramo 69 días (Descuento 1.5%)"), unsafe_allow_html=True)
             if 'VENCIMIENTO 89D - 1%' in df_op.columns:
-                st.markdown(renderizar_semaforo(df_op['VENCIMIENTO 89D - 1%'].iloc[0], "Tercer Tramo de Pago", "Descuento del 1%"), unsafe_allow_html=True)
+                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 89D - 1%'].iloc[0], "Tramo 89 días (Descuento 1%)"), unsafe_allow_html=True)
             if 'VENCIMIENTO 120D - PLENO' in df_op.columns:
-                st.markdown(renderizar_semaforo(df_op['VENCIMIENTO 120D - PLENO'].iloc[0], "Límite de Crédito Neto", "Pago Pleno"), unsafe_allow_html=True)
+                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 120D - PLENO'].iloc[0], "Límite 120 días (Pago plato)"), unsafe_allow_html=True)
 
             st.write("")
-            st.subheader("🚚 Distribución Física de Carga por Contenedor")
-            
+            st.subheader("🚚 Referencias por contenedor")
             if 'CONTENEDOR' in df_op.columns:
                 contenedores_sistema = df_op['CONTENEDOR'].dropna().unique()
-                
                 if len(contenedores_sistema) > 0:
                     grid_visual = st.columns(min(len(contenedores_sistema), 2))
-                    
                     for idx, cont_id in enumerate(contenedores_sistema):
                         df_items_contenedor = df_op[df_op['CONTENEDOR'] == cont_id]
                         col_actual = grid_visual[idx % len(grid_visual)]
-                        
                         with col_actual:
-                            # SE CONSTRUYE TODO EL CONTENEDOR EN UNA SOLA CADENA TOTALMENTE DE APERTURA A CIERRE
-                            html_total_contenedor = ""
-                            html_total_contenedor += '<div class="container-box-p">'
-                            html_total_contenedor += '  <div class="container-header-p">'
-                            html_total_contenedor += f'      <span>🆔 CONTENEDOR: {cont_id}</span>'
-                            html_total_contenedor += '      <span>📦 TIPO: 40HQ ESTÁNDAR</span>'
-                            html_total_contenedor += '  </div>'
-                            html_total_contenedor += '  <div class="container-body-p">'
-                            
+                            html_total_contenedor = f'<div class="container-box-p"><div class="container-header-p"><span>Contenedor: {cont_id}</span><span>Tipo: 40HQ Estándar</span></div><div class="container-body-p">'
                             for _, p_row in df_items_contenedor.iterrows():
                                 val_usd = p_row['VALOR TOTAL (USD)'] if 'VALOR TOTAL (USD)' in p_row else 0
                                 cant = p_row['CANTIDAD'] if 'CANTIDAD' in p_row else 0
                                 ref = p_row['REFERENCIA/MODELO'] if 'REFERENCIA/MODELO' in p_row else 'Sin Ref'
                                 
-                                col_cop_name = next((n for n in ['VALOR_NACIONALIZADO', 'VALOR NACIONALIZADO COP', 'VALOR_NACIONALIZADO_COP', 'VALOR NACIONALIZADO'] if n in df_op.columns), None)
-                                
-                                if col_cop_name and pd.notna(p_row[col_cop_name]):
-                                    try:
-                                        valor_numerico_cop = pd.to_numeric(p_row[col_cop_name])
-                                        texto_costo_variable = f" | 🇨🇴 Nac: ${valor_numerico_cop:,.2f} COP"
-                                    except (ValueError, TypeError):
-                                        texto_costo_variable = f" | 🇨🇴 Nac: {p_row[col_cop_name]} COP"
+                                if col_cop_name and pd.notna(p_row[col_cop_name]) and str(p_row[col_cop_name]).strip().lower() != 'none':
+                                    texto_costo_variable = f" | Costo Nac: {p_row[col_cop_name]} COP"
                                 elif 'VALOR UNITARIO (USD)' in p_row:
-                                    texto_costo_variable = f" | 💵 Unitario: ${p_row['VALOR UNITARIO (USD)']:,.2f} USD"
+                                    texto_costo_variable = f" | Valor: ${p_row['VALOR UNITARIO (USD)']:,.2f} USD"
                                 else:
                                     texto_costo_variable = ""
 
-                                # Agregar la fila de producto al bloque sin romper strings
-                                html_total_contenedor += '      <div class="product-row-p">'
-                                html_total_contenedor += f'          <span class="product-title-p">{int(cant)} Unidades <span class="product-subtitle-p">— {ref}</span></span>'
-                                html_total_contenedor += f'          <span class="product-meta-p">💰 Total Bloque: ${val_usd:,.2f} USD {texto_costo_variable}</span>'
-                                html_total_contenedor += '      </div>'
-                            
-                            html_total_contenedor += '  </div>'
-                            html_total_contenedor += '</div>'
-                            
-                            # Renderizado masivo forzado
+                                html_total_contenedor += f'<div class="product-row-p"><span class="product-title-p">{int(cant)} unidades <span class="product-subtitle-p">— {ref}</span></span><span class="product-meta-p">💰 Bloque: ${val_usd:,.2f} USD {texto_costo_variable}</span></div>'
+                            html_total_contenedor += '</div></div>'
                             st.markdown(html_total_contenedor, unsafe_allow_html=True)
 
-# --- MÓDULO 3: POR DESPACHAR (DISEÑO RESTRUCTURADO Y BLINDADO) ---
-    elif menu == "🚨 Alertas: Por Despachar":
-        st.title("Módulo de Control: Embarques en Planeación")
-        st.markdown("<p style='color: #64748B; font-size:14px;'>Monitoreo predictivo de órdenes en fábrica pendientes por confirmación de BL y zarpe.</p>", unsafe_allow_html=True)
+    # --- MÓDULO 3: REFERENCIAS EN PRODUCCIÓN ---
+    elif menu == "🚨 Referencias en Producción":
+        st.title("Referencias en producción")
+        st.markdown("<p style='color: #64748B; font-size:14px;'>Monitoreo predictivo de órdenes agrupadas por modelo pendientes por asignación de BL y fecha de zarpe.</p>", unsafe_allow_html=True)
         st.write("---")
         
         df_plan['BL_aux'] = df_plan['BL'].astype(str).str.strip().str.upper()
@@ -552,45 +637,61 @@ elif df_plan is not None and df_maestro is not None:
         df_pendientes_despacho = df_plan[mascara_sin_bl].copy()
         
         if not df_pendientes_despacho.empty:
-            st.markdown(f"### ⚠️ Órdenes Críticas sin Zarpe Detectadas (`{len(df_pendientes_despacho)}` Referencias)")
+            df_pendientes_despacho['Modelo'] = df_pendientes_despacho['Modelo'].fillna('Modelo desconocido').astype(str)
+            df_pendientes_despacho['Description'] = df_pendientes_despacho['Description'].fillna('Sin descripción técnica.').astype(str)
+            df_pendientes_despacho['No PI'] = df_pendientes_despacho['No PI'].fillna('Pendiente').astype(str)
+            df_pendientes_despacho['QTY'] = pd.to_numeric(df_pendientes_despacho['QTY'], errors='coerce').fillna(0).astype(int)
             
-            # Configuramos un sistema de 3 columnas nativas de Streamlit para el Grid interactivo
+            def formatear_fecha(x):
+                if pd.isna(x): return 'No parametrizado'
+                if isinstance(x, datetime): return x.strftime('%Y-%m-%d')
+                return str(x).split(" ")[0]
+            df_pendientes_despacho['Fecha_Format'] = df_pendientes_despacho['Forecast ETD'].apply(formatear_fecha)
+
+            # Agrupar las descripciones en listas de Python únicas en lugar de unirlas con barras '/'
+            df_agrupado = df_pendientes_despacho.groupby('Modelo').agg({
+                'QTY': 'sum',
+                'Description': lambda x: sorted(list(set(x.dropna()))),
+                'No PI': lambda x: ", ".join(sorted(set(x.astype(str)))),
+                'Fecha_Format': lambda x: x.iloc[0]
+            }).reset_index()
+
+            st.markdown("### Modelos en fabricación")
+            
             columnas_grid = st.columns(3)
-            
-            for idx, fila in df_pendientes_despacho.reset_index().iterrows():
-                pi_label = fila['No PI'] if pd.notna(fila['No PI']) else 'Pendiente'
-                desc_label = fila['Description'] if pd.notna(fila['Description']) else 'Sin descripción técnica parametrizada.'
-                modelo_label = fila['Modelo'] if pd.notna(fila['Modelo']) else 'Modelo Desconocido'
-                qty_label = int(fila['QTY']) if pd.notna(fila['QTY']) else 0
-                
-                # Manejo limpio de fechas para evitar formatos extensos con horas
-                if pd.notna(fila['Forecast ETD']):
-                    if isinstance(fila['Forecast ETD'], datetime):
-                        etd_label = fila['Forecast ETD'].strftime('%Y-%m-%d')
-                    else:
-                        etd_label = str(fila['Forecast ETD']).split(" ")[0]
-                else:
-                    etd_label = 'No Parametrizado'
-                
-                # Seleccionamos la columna correspondiente del Grid de Streamlit de manera cíclica
+            for idx, fila in df_agrupado.iterrows():
+                modelo_label = fila['Modelo']
+                qty_label = fila['QTY']
+                lista_descripciones = fila['Description']
+                pi_label = fila['No PI']
+                etd_label = fila['Fecha_Format']
+
+                # Convertir la lista de descripciones en ítems HTML (<li>) independientes
+                html_items_descripcion = '<ul class="dispatch-items-list">'
+                for desc in lista_descripciones:
+                    if desc.strip():
+                        html_items_descripcion += f'<li class="dispatch-item-line">{desc}</li>'
+                html_items_descripcion += '</ul>'
+
                 col_actual = columnas_grid[idx % 3]
-                
                 with col_actual:
-                    # Construcción horizontal sin saltos de línea físicos para evitar escapes a texto plano
-                    html_tarjeta = ""
-                    html_tarjeta += '<div class="dispatch-card-premium">'
-                    html_tarjeta += '  <div class="dispatch-tag">Fábrica - Pendiente BL</div>'
-                    html_tarjeta += f'  <div class="dispatch-model">📦 {modelo_label}</div>'
-                    html_tarjeta += f'  <div class="dispatch-desc">{desc_label}</div>'
-                    html_tarjeta += '  <div class="dispatch-meta-row">'
-                    html_tarjeta += f'      <span><strong>Cant:</strong> {qty_label:,} un.</span>'
-                    html_tarjeta += f'      <span><strong>Proforma:</strong> {pi_label}</span>'
-                    html_tarjeta += '  </div>'
-                    html_tarjeta += f'  <div class="dispatch-date">🚨 <strong>Forecast ETD:</strong> {etd_label}</div>'
-                    html_tarjeta += '</div>'
-                    
-                    # Inyección segura e individual por tarjeta
+                    html_tarjeta = f"""
+                    <div class="dispatch-card-premium">
+                      <div>
+                          <div class="dispatch-tag">Fábrica - Pendiente BL</div>
+                          <div class="dispatch-model">📦 {modelo_label}</div>
+                          {html_items_descripcion}
+                      </div>
+                      <div>
+                          <div class="dispatch-meta-row">
+                              <span><strong>Cant total:</strong> {qty_label:,} un.</span>
+                              <span><strong>PI(s):</strong> {pi_label}</span>
+                          </div>
+                          <div class="dispatch-date">📅 <strong>Forecast ETD:</strong> {etd_label}</div>
+                      </div>
+                    </div>
+                    """
                     st.markdown(html_tarjeta, unsafe_allow_html=True)
-                    st.write("") # Espaciado estético inferior entre filas del grid
+                    st.write("") 
         else:
-            st.success("🎉 ¡Excelente control operativo! No se registran referencias pendientes por despachar en el plan actual.")
+            st.success("No se registran referencias en producción pendientes en el plan actual.")
