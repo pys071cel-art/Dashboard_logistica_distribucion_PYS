@@ -229,7 +229,6 @@ st.markdown("""
     }
     .dispatch-model { font-size: 16px; font-weight: 700; color: #0F172A; margin-bottom: 8px; }
     
-    /* CONTENEDOR DE ÍTEMS LIMPIOS */
     .dispatch-items-list {
         margin: 0 0 14px 0;
         padding: 0;
@@ -416,7 +415,7 @@ elif df_plan is not None and df_maestro is not None:
     # --- MÓDULO 1: TRAZABILIDAD E HISTORIAL ---
     if menu == "📈 Trazabilidad e Historial":
         st.title("Control general de operaciones")
-        st.markdown("<p style='color: #64748B; font-size:14px;'>Consolidado estratégico de importaciones e historial analítico de costos.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #64748B; font-size:14px;'>Consolidado estratégico de importaciones distribuido por estatus operativo y financiero.</p>", unsafe_allow_html=True)
         st.write("---")
         
         ckpi1, ckpi2, ckpi3 = st.columns(3)
@@ -428,77 +427,121 @@ elif df_plan is not None and df_maestro is not None:
         with ckpi2: st.markdown(f'<div class="kpi-card-premium kpi-indigo"><div class="kpi-val-p">{total_conts}</div><div class="kpi-lbl-p">Contenedores Gestión</div></div>', unsafe_allow_html=True)
         with ckpi3: st.markdown(f'<div class="kpi-card-premium kpi-emerald"><div class="kpi-val-p">{int(total_unis):,}</div><div class="kpi-lbl-p">Unidades Globales Importadas</div></div>', unsafe_allow_html=True)
             
-        st.subheader("📋 Estado actual de flujos logísticos")
+        st.subheader("📋 Distribución de flujos logísticos y financieros")
         
         if 'OPERACIÓN' in df_maestro.columns:
+            # Asegurar existencia de las columnas de estado de forma limpia
+            if 'ESTADO_PAGO' not in df_maestro.columns:
+                df_maestro['ESTADO_PAGO'] = None
+                
+            if 'ESTADO DE DISTRIBUCION' in df_maestro.columns:
+                df_maestro['ESTADO DE DISTRIBUCION'] = df_maestro['ESTADO DE DISTRIBUCION'].astype(str).str.strip()
+            else:
+                df_maestro['ESTADO DE DISTRIBUCION'] = "En tránsito"
+                
+            # Agrupación directa y exacta por Operación
             ops_resumen = df_maestro.groupby('OPERACIÓN').agg({
                 'CONTENEDOR': 'nunique', 
                 'CANTIDAD': 'sum', 
                 'VALOR TOTAL (USD)': 'sum',
-                'ESTADO DE DISTRIBUCION': lambda x: str(x.dropna().iloc[0]).strip() if not x.dropna().empty else "En Proceso",
+                'ESTADO DE DISTRIBUCION': lambda x: x.dropna().iloc[0] if not x.dropna().empty else "En tránsito",
+                'ESTADO_PAGO': lambda x: str(x.dropna().iloc[0]).strip() if not x.dropna().empty else "",
                 'ETA': lambda x: x.dropna().iloc[0] if not x.dropna().empty else pd.NaT
             }).reset_index()
             
-            for _, row in ops_resumen.iterrows():
-                eta_str = row['ETA'].strftime('%Y-%m-%d') if pd.notna(row['ETA']) else "Por Confirmar"
-                estado_texto = row['ESTADO DE DISTRIBUCION']
+            # --- SEPARACIÓN EN DOS COLUMNAS REFORZADA ---
+            col_izq, col_der = st.columns(2)
+            
+            with col_izq:
+                st.markdown("#### 🚢 En Tránsito")
+                # Filtro exacto ignorando diferencias de mayúsculas
+                df_transito = ops_resumen[ops_resumen['ESTADO DE DISTRIBUCION'].str.lower() == 'en tránsito']
                 
-                estado_clean = estado_texto.lower().replace('á', 'a')
-                if 'entregado' in estado_clean:
-                    clase_badge = "status-entregado"
-                elif 'transito' in estado_clean:
-                    clase_badge = "status-transito"
-                elif 'despachar' in estado_clean:
-                    clase_badge = "status-despachar"
+                if df_transito.empty:
+                    st.info("No hay operaciones registradas en tránsito.")
                 else:
-                    clase_badge = "status-proceso"
-                
-                html_linea_trazabilidad = f"""
-                <div class="timeline-container-p">
-                    <div class="timeline-left">
-                        <div class="op-badge-p">{row['OPERACIÓN']}</div>
-                        <div class="timeline-info">
-                            <div class="timeline-main-text">Monto de Operación: USD {row['VALOR TOTAL (USD)']:,.2f}</div>
-                            <div class="timeline-sub-text">
-                                <span>📦 {row['CONTENEDOR']} Contenedor(es)</span>
-                                <span>|</span>
-                                <span>🔢 {int(row['CANTIDAD']):,} Equipos de Carga</span>
+                    for _, row in df_transito.iterrows():
+                        eta_str = row['ETA'].strftime('%Y-%m-%d') if pd.notna(row['ETA']) else "Por Confirmar"
+                        
+                        # Validación e indicador de pago
+                        es_pago = str(row['ESTADO_PAGO']).strip() != "" and str(row['ESTADO_PAGO']).lower() != "nan"
+                        badge_pago_html = (
+                            '<span style="background-color: #DCFCE7; color: #15803D; font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600; margin-left:8px;">✅ YA ESTÁ PAGO</span>'
+                            if es_pago else 
+                            '<span style="background-color: #FEE2E2; color: #991B1B; font-size:11px; padding:2px 8px; border-radius:12px; font-weight:600; margin-left:8px;">🚨 PENDIENTE PAGO</span>'
+                        )
+                        
+                        html_linea = f"""
+                        <div class="timeline-container-p" style="border-left: 5px solid #F59E0B;">
+                            <div class="timeline-left">
+                                <div class="op-badge-p">{row['OPERACIÓN']}</div>
+                                <div class="timeline-info">
+                                    <div class="timeline-main-text">Monto: USD {row['VALOR TOTAL (USD)']:,.2f} {badge_pago_html}</div>
+                                    <div class="timeline-sub-text">
+                                        <span>📦 {row['CONTENEDOR']} Contenedor(es)</span> | <span>🔢 {int(row['CANTIDAD']):,} Equipos</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="timeline-right">
+                                <div class="timeline-eta">📅 ETA: {eta_str}</div>
+                                <div class="status-badge status-transito">{row['ESTADO DE DISTRIBUCION']}</div>
                             </div>
                         </div>
-                    </div>
-                    <div class="timeline-right">
-                        <div class="timeline-eta">📅 ETA: {eta_str}</div>
-                        <div class="status-badge {clase_badge}">{estado_texto}</div>
-                    </div>
-                </div>
-                """
-                st.markdown(html_linea_trazabilidad, unsafe_allow_html=True)
+                        """
+                        st.markdown(html_linea, unsafe_allow_html=True)
+            
+            with col_der:
+                st.markdown("#### 🏢 Ya Llegó / Entregado")
+                # Filtro exacto para la columna derecha
+                df_entrega = ops_resumen[ops_resumen['ESTADO DE DISTRIBUCION'].str.lower() == 'entregado']
+                
+                if df_entrega.empty:
+                    st.info("No hay operaciones registradas como entregadas.")
+                else:
+                    for _, row in df_entrega.iterrows():
+                        eta_str = row['ETA'].strftime('%Y-%m-%d') if pd.notna(row['ETA']) else "Finalizado"
+                        
+                        html_linea = f"""
+                        <div class="timeline-container-p" style="border-left: 5px solid #10B981;">
+                            <div class="timeline-left">
+                                <div class="op-badge-p" style="background: linear-gradient(135deg, #059669 0%, #064E3B 100%);">{row['OPERACIÓN']}</div>
+                                <div class="timeline-info">
+                                    <div class="timeline-main-text">Monto: USD {row['VALOR TOTAL (USD)']:,.2f}</div>
+                                    <div class="timeline-sub-text">
+                                        <span>📦 {row['CONTENEDOR']} Contenedor(es)</span> | <span>🔢 {int(row['CANTIDAD']):,} Equipos</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="timeline-right">
+                                <div class="timeline-eta">🏁 Arribo: {eta_str}</div>
+                                <div class="status-badge status-entregado">{row['ESTADO DE DISTRIBUCION']}</div>
+                            </div>
+                        </div>
+                        """
+                        st.markdown(html_linea, unsafe_allow_html=True)
 
         st.write("---")
         
         # HISTORIAL ANALÍTICO DE VARIACIÓN DE COSTOS
         st.subheader("📊 Historial analítico de variaciones y costos de referencia")
-        st.markdown("<p style='color: #475569; font-size:13.5px; margin-top:-10px;'>Monitoreo de volatilidad de precios internacionales (USD) y comportamiento del costo nacionalizado (COP) indexado por operación.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #475569; font-size:13.5px; margin-top:-10px;'>Monitoreo de volatilidad de precios internacionales (USD) y comportamiento del costo nacionalizado (COP) indexado por operation.</p>", unsafe_allow_html=True)
         
         productos_disponibles = sorted(df_maestro['REFERENCIA/MODELO'].dropna().unique())
         producto_sel = st.selectbox("Seleccione la referencia o modelo a analizar:", productos_disponibles)
         
-        # Filtrar por producto garantizando NO descartar filas por culpa de celdas COP vacías
         df_hist = df_maestro[df_maestro['REFERENCIA/MODELO'] == producto_sel].copy()
         df_hist = df_hist.dropna(subset=['EMISIÓN FRA', 'VALOR UNITARIO (USD)']).sort_values('EMISIÓN FRA')
         
         if not df_hist.empty:
             df_hist['Etiqueta_Grafico'] = df_hist.apply(lambda r: f"{r['OPERACIÓN']} ({r['EMISIÓN FRA'].strftime('%Y-%m-%d')})", axis=1)
             
-            # Limpieza segura de COP convirtiendo a numérico sin tumbar el DataFrame
             def limpiar_pesos_colombia_enteros(valor):
                 if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '']:
                     return None
                 val_str = str(valor).replace('$', '').replace(' ', '').replace(',', '').strip()
                 if '.' in val_str:
-                    # Si tiene punto decimal como separador de miles ficticio
                     partes = val_str.split('.')
-                    if len(partes[-1]) == 2 and partes[-1].isdigit(): # Formato decimal estándar .00
+                    if len(partes[-1]) == 2 and partes[-1].isdigit():
                         val_str = "".join(partes[:-1])
                     else:
                         val_str = val_str.replace('.', '')
@@ -518,7 +561,6 @@ elif df_plan is not None and df_maestro is not None:
                 st.plotly_chart(fig_usd, use_container_width=True)
                 
             with cg2:
-                # Graficar barra limpia. Si hay valores nulos en COP se muestran vacíos en su tramo pero NO rompen la gráfica entera
                 df_barras_cop = df_hist.dropna(subset=['COP_Grafico'])
                 if not df_barras_cop.empty:
                     fig_cop = px.bar(df_barras_cop, x='Etiqueta_Grafico', y='COP_Grafico', 
@@ -531,10 +573,9 @@ elif df_plan is not None and df_maestro is not None:
                     )
                     st.plotly_chart(fig_cop, use_container_width=True)
                 else:
-                    # Si no hay datos COP aún, renderizar un gráfico base vacío estilizado para mantener la simetría visual
-                    fig_vacío = px.bar(title="Variación del costo unitario nacionalizado final (COP)")
-                    fig_vacío.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-                    st.plotly_chart(fig_vacío, use_container_width=True)
+                    fig_vacio = px.bar(title="Variación del costo unitario nacionalizado final (COP)")
+                    fig_vacio.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_vacio, use_container_width=True)
             
             st.markdown("**Desglose detallado de precios por operación histórica:**")
             columnas_mostrar = ['OPERACIÓN', 'EMISIÓN FRA', 'FRA', 'VALOR UNITARIO (USD)']
@@ -544,7 +585,6 @@ elif df_plan is not None and df_maestro is not None:
             df_resumen_tabla = df_hist[columnas_mostrar].drop_duplicates().copy()
             df_resumen_tabla['EMISIÓN FRA'] = df_resumen_tabla['EMISIÓN FRA'].dt.strftime('%Y-%m-%d')
             
-            # Formatear visualmente la tabla rellenando vacíos con 'None' idéntico a la maqueta original
             if col_cop_name:
                 df_resumen_tabla[col_cop_name] = df_resumen_tabla[col_cop_name].apply(lambda x: "None" if pd.isna(x) or str(x).strip().lower()=='none' else x)
                 
@@ -575,29 +615,44 @@ elif df_plan is not None and df_maestro is not None:
             st.write("")
             st.subheader("⏳ Control de vencimientos financieros")
             
-            def renderizar_linea_vencimiento_semaforo(fecha_limite, tramo_label):
-                if pd.isna(fecha_limite):
-                    return f'<div class="semaforo-box-p sem-gris"><span>{tramo_label}</span><strong>Fecha no parametrizada</strong></div>'
-                dias_restantes = (fecha_limite - fecha_hoy).days
-                if dias_restantes < 0:
-                    clase_sem = "sem-rojo"
-                    mensaje = f"Plazo vencido hace {abs(dias_restantes)} días"
-                elif dias_restantes <= 15:
-                    clase_sem = "sem-amarillo"
-                    mensaje = f"Alerta de vencimiento cercano — Quedan {dias_restantes} días"
-                else:
-                    clase_sem = "sem-verde"
-                    mensaje = f"Plazo vigente y seguro — Quedan {dias_restantes} días"
-                return f'<div class="semaforo-box-p {clase_sem}"><strong>Vencimiento de pago — {tramo_label}</strong><span>{mensaje} ({fecha_limite.strftime("%Y-%m-%d")})</span></div>'
+            # --- EVALUACIÓN GLOBAL DE ESTADO_PAGO PARA LOS SEMÁFOROS ---
+            tiene_registro_pago = False
+            if 'ESTADO_PAGO' in df_op.columns:
+                valor_pago = str(df_op['ESTADO_PAGO'].iloc[0]).strip()
+                if valor_pago != "" and valor_pago.lower() != "nan":
+                    tiene_registro_pago = True
 
-            if 'VENCIMIENTO 45 D - 2%' in df_op.columns:
-                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 45 D - 2%'].iloc[0], "Tramo 45 días (Descuento 2%)"), unsafe_allow_html=True)
-            if 'VENCIMIENTO 69D 1.5%' in df_op.columns:
-                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 69D 1.5%'].iloc[0], "Tramo 69 días (Descuento 1.5%)"), unsafe_allow_html=True)
-            if 'VENCIMIENTO 89D - 1%' in df_op.columns:
-                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 89D - 1%'].iloc[0], "Tramo 89 días (Descuento 1%)"), unsafe_allow_html=True)
-            if 'VENCIMIENTO 120D - PLENO' in df_op.columns:
-                st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 120D - PLENO'].iloc[0], "Límite 120 días (Pago plato)"), unsafe_allow_html=True)
+            if tiene_registro_pago:
+                st.markdown("""
+                    <div class="semaforo-box-p" style="border-left: 6px solid #10B981; background-color: #F0FDF4; padding: 20px; font-size: 16px;">
+                        <span style="color: #15803D; font-weight: 700;">🟢 YA ESTÁ PAGO</span>
+                        <span style="color: #475569; font-size:13.5px;">Esta obligación financiera se encuentra totalmente solventada y conciliada.</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            else:
+                def renderizar_linea_vencimiento_semaforo(fecha_limite, tramo_label):
+                    if pd.isna(fecha_limite):
+                        return f'<div class="semaforo-box-p sem-gris"><span>{tramo_label}</span><strong>Fecha no parametrizada</strong></div>'
+                    dias_restantes = (fecha_limite - fecha_hoy).days
+                    if dias_restantes < 0:
+                        clase_sem = "sem-rojo"
+                        mensaje = f"Plazo vencido hace {abs(dias_restantes)} días"
+                    elif dias_restantes <= 15:
+                        clase_sem = "sem-amarillo"
+                        mensaje = f"Alerta de vencimiento cercano — Quedan {dias_restantes} días"
+                    else:
+                        clase_sem = "sem-verde"
+                        mensaje = f"Plazo vigente y seguro — Quedan {dias_restantes} días"
+                    return f'<div class="semaforo-box-p {clase_sem}"><strong>Vencimiento de pago — {tramo_label}</strong><span>{mensaje} ({fecha_limite.strftime("%Y-%m-%d")})</span></div>'
+
+                if 'VENCIMIENTO 45 D - 2%' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 45 D - 2%'].iloc[0], "Tramo 45 días (Descuento 2%)"), unsafe_allow_html=True)
+                if 'VENCIMIENTO 69D 1.5%' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 69D 1.5%'].iloc[0], "Tramo 69 días (Descuento 1.5%)"), unsafe_allow_html=True)
+                if 'VENCIMIENTO 89D - 1%' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 89D - 1%'].iloc[0], "Tramo 89 días (Descuento 1%)"), unsafe_allow_html=True)
+                if 'VENCIMIENTO 120D - PLENO' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 120D - PLENO'].iloc[0], "Límite 120 días (Pago plazo)"), unsafe_allow_html=True)
 
             st.write("")
             st.subheader("🚚 Referencias por contenedor")
@@ -622,76 +677,47 @@ elif df_plan is not None and df_maestro is not None:
                                 else:
                                     texto_costo_variable = ""
 
-                                html_total_contenedor += f'<div class="product-row-p"><span class="product-title-p">{int(cant)} unidades <span class="product-subtitle-p">— {ref}</span></span><span class="product-meta-p">💰 Bloque: ${val_usd:,.2f} USD {texto_costo_variable}</span></div>'
-                            html_total_contenedor += '</div></div>'
+                                html_total_contenedor += f"""
+                                <div class="product-row-p">
+                                    <div class="product-title-p">{ref}</div>
+                                    <div class="product-subtitle-p">Cantidad: {int(cant)} unidades</div>
+                                    <div class="product-meta-p">Total FOB: USD {val_usd:,.2f}{texto_costo_variable}</div>
+                                </div>
+                                """
+                            html_total_contenedor += "</div></div>"
                             st.markdown(html_total_contenedor, unsafe_allow_html=True)
 
     # --- MÓDULO 3: REFERENCIAS EN PRODUCCIÓN ---
     elif menu == "🚨 Referencias en Producción":
-        st.title("Referencias en producción")
-        st.markdown("<p style='color: #64748B; font-size:14px;'>Monitoreo predictivo de órdenes agrupadas por modelo pendientes por asignación de BL y fecha de zarpe.</p>", unsafe_allow_html=True)
+        st.title("Plan de fabricación y despacho")
+        st.markdown("<p style='color: #64748B; font-size:14px;'>Monitoreo preventivo de referencias actualmente en cola de producción antes del zarpe internacional.</p>", unsafe_allow_html=True)
         st.write("---")
         
-        df_plan['BL_aux'] = df_plan['BL'].astype(str).str.strip().str.upper()
-        mascara_sin_bl = (df_plan['BL'].isna()) | (df_plan['BL_aux'] == 'NAN') | (df_plan['BL_aux'] == '') | (df_plan['BL_aux'] == 'POR ASIGNAR')
-        df_pendientes_despacho = df_plan[mascara_sin_bl].copy()
-        
-        if not df_pendientes_despacho.empty:
-            df_pendientes_despacho['Modelo'] = df_pendientes_despacho['Modelo'].fillna('Modelo desconocido').astype(str)
-            df_pendientes_despacho['Description'] = df_pendientes_despacho['Description'].fillna('Sin descripción técnica.').astype(str)
-            df_pendientes_despacho['No PI'] = df_pendientes_despacho['No PI'].fillna('Pendiente').astype(str)
-            df_pendientes_despacho['QTY'] = pd.to_numeric(df_pendientes_despacho['QTY'], errors='coerce').fillna(0).astype(int)
-            
-            def formatear_fecha(x):
-                if pd.isna(x): return 'No parametrizado'
-                if isinstance(x, datetime): return x.strftime('%Y-%m-%d')
-                return str(x).split(" ")[0]
-            df_pendientes_despacho['Fecha_Format'] = df_pendientes_despacho['Forecast ETD'].apply(formatear_fecha)
-
-            # Agrupar las descripciones en listas de Python únicas en lugar de unirlas con barras '/'
-            df_agrupado = df_pendientes_despacho.groupby('Modelo').agg({
-                'QTY': 'sum',
-                'Description': lambda x: sorted(list(set(x.dropna()))),
-                'No PI': lambda x: ", ".join(sorted(set(x.astype(str)))),
-                'Fecha_Format': lambda x: x.iloc[0]
-            }).reset_index()
-
-            st.markdown("### Modelos en fabricación")
-            
-            columnas_grid = st.columns(3)
-            for idx, fila in df_agrupado.iterrows():
-                modelo_label = fila['Modelo']
-                qty_label = fila['QTY']
-                lista_descripciones = fila['Description']
-                pi_label = fila['No PI']
-                etd_label = fila['Fecha_Format']
-
-                # Convertir la lista de descripciones en ítems HTML (<li>) independientes
-                html_items_descripcion = '<ul class="dispatch-items-list">'
-                for desc in lista_descripciones:
-                    if desc.strip():
-                        html_items_descripcion += f'<li class="dispatch-item-line">{desc}</li>'
-                html_items_descripcion += '</ul>'
-
-                col_actual = columnas_grid[idx % 3]
-                with col_actual:
-                    html_tarjeta = f"""
-                    <div class="dispatch-card-premium">
-                      <div>
-                          <div class="dispatch-tag">Fábrica - Pendiente BL</div>
-                          <div class="dispatch-model">📦 {modelo_label}</div>
-                          {html_items_descripcion}
-                      </div>
-                      <div>
-                          <div class="dispatch-meta-row">
-                              <span><strong>Cant total:</strong> {qty_label:,} un.</span>
-                              <span><strong>PI(s):</strong> {pi_label}</span>
-                          </div>
-                          <div class="dispatch-date">📅 <strong>Forecast ETD:</strong> {etd_label}</div>
-                      </div>
+        if df_plan is not None and not df_plan.empty:
+            st.markdown('<div class="dispatch-grid">', unsafe_allow_html=True)
+            for _, r_plan in df_plan.iterrows():
+                ref_m = r_plan.get('REFERENCIA / MODELO', 'N/A')
+                cant_m = r_plan.get('CANTIDAD', 0)
+                obs_m = r_plan.get('OBSERVACIONES', 'Sin novedades registradas')
+                id_m = r_plan.get('ID', 'N/A')
+                
+                html_card = f"""
+                <div class="dispatch-card-premium">
+                    <div>
+                        <div class="dispatch-tag">En Línea de Ensamble</div>
+                        <div class="dispatch-model">{ref_m}</div>
+                        <ul class="dispatch-items-list">
+                            <li class="dispatch-item-line"><strong>Cantidad base:</strong> {int(cant_m) if pd.notna(cant_m) else 0} Unidades</li>
+                            <li class="dispatch-item-line"><strong>Estado actual:</strong> {obs_m}</li>
+                        </ul>
                     </div>
-                    """
-                    st.markdown(html_tarjeta, unsafe_allow_html=True)
-                    st.write("") 
+                    <div class="dispatch-meta-row">
+                        <span>Orden Ref: #{id_m}</span>
+                        <span>Fábrica Asignada</span>
+                    </div>
+                </div>
+                """
+                st.markdown(html_card, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.success("No se registran referencias en producción pendientes en el plan actual.")
+            st.info("No existen órdenes activas en el plan de producción actual.")
