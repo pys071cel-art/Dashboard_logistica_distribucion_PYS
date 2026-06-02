@@ -427,7 +427,7 @@ with st.sidebar:
             font-family: sans-serif;
         ">
         <strong style="color: #475569;">Proyectos y Servicios SAS</strong><br>
-        Área de planeación y Distribución<br>
+        Área de Planeación e Importaciones<br>
         <span style='font-size:10px; color:#475569;'>Enterprise System v4.0</span>
         </div> """, unsafe_allow_html=True)
 
