@@ -551,13 +551,25 @@ elif df_plan is not None and df_maestro is not None:
             def limpiar_pesos_colombia_enteros(valor):
                 if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '']:
                     return None
-                val_str = str(valor).replace('$', '').replace(' ', '').replace(',', '').strip()
-                if '.' in val_str:
+                val_str = str(valor).replace('$', '').replace(' ', '').strip()
+                
+                # Si hay puntos y comas mezclados (ej: 1.436.115,00)
+                if ',' in val_str and '.' in val_str:
+                    if val_str.rfind(',') > val_str.rfind('.'):
+                        val_str = val_str.replace('.', '').replace(',', '.')
+                    else:
+                        val_str = val_str.replace(',', '')
+                # Si solo tiene puntos (formato colombiano común: 1.436.115)
+                elif '.' in val_str and ',' not in val_str:
                     partes = val_str.split('.')
-                    if len(partes[-1]) == 2 and partes[-1].isdigit(): 
+                    # Si la última parte tiene 2 dígitos, es un decimal (.00), si no, eran miles
+                    if len(partes[-1]) == 2 and partes[-1].isdigit():
                         val_str = "".join(partes[:-1])
                     else:
                         val_str = val_str.replace('.', '')
+                elif ',' in val_str and '.' not in val_str:
+                    val_str = val_str.replace(',', '')
+            
                 return pd.to_numeric(val_str, errors='coerce')
 
             df_hist['COP_Grafico'] = df_hist[col_cop_name].apply(limpiar_pesos_colombia_enteros) if col_cop_name else None
