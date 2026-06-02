@@ -548,82 +548,105 @@ elif df_plan is not None and df_maestro is not None:
         if not df_hist.empty:
             df_hist['Etiqueta_Grafico'] = df_hist.apply(lambda r: f"{r['OPERACIÓN']} ({r['EMISIÓN FRA'].strftime('%Y-%m-%d')})", axis=1)
             
+# =========================================================================
+            # NUEVA FUNCIÓN DE LIMPIEZA ULTRA-PRECISA
+            # =========================================================================
             def limpiar_pesos_colombia_enteros(valor):
-                if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '']:
+                if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '', 'null']:
                     return None
                 
-                # Si el dato YA ES un número flotante o entero en el Excel, lo dejamos quieto
+                # Si ya es un número flotante o entero en el Excel, lo dejamos quieto
                 if isinstance(valor, (int, float)):
-                    # Si por alguna razón el número real es flotante pero se desfasó por culpa de un decimal oculto
-                    if valor > 9000000:
-                        return int(round(valor / 10))
-                    return int(round(valor))
+                    return float(valor)
                     
-                # Si el dato es una cadena de texto, aplicamos la disección de formato
+                # Si viene como cadena de texto, limpiamos formatos mixtos
                 val_str = str(valor).replace('$', '').replace(' ', '').strip()
                 
                 if ',' in val_str and '.' in val_str:
-                    # Formato americano con comas en miles y punto decimal: 1,436,115.00
+                    # Formato con comas de miles y punto decimal: 969,000.02
                     if val_str.rfind('.') > val_str.rfind(','):
                         val_str = val_str.replace(',', '')
+                    else:
+                        # Formato inverso: 969.000,02
+                        val_str = val_str.replace('.', '').replace(',', '.')
                 elif '.' in val_str and ',' not in val_str:
-                    # Formato común colombiano escrito como texto: 1.436.115
                     partes = val_str.split('.')
-                    # Si la última parte tiene 2 dígitos (ej: .27 o .91), el punto era un decimal
+                    # Si el último tramo tiene 2 dígitos, era un decimal real (ej: 969000.02)
                     if len(partes[-1]) == 2 and partes[-1].isdigit():
-                        # Es un decimal real, rearmamos el número quitando los puntos de miles previos si existían
                         val_str = "".join(partes[:-1]) + "." + partes[-1]
                     else:
-                        # No eran decimales, eran puros puntos de miles (ej: 1.436.115). Los borramos todos.
+                        # Eran puntos de miles (ej: 965.438)
                         val_str = val_str.replace('.', '')
-                        
-                # Convertimos a número final
-                numero = pd.to_numeric(val_str, errors='coerce')
-                
-                if pd.isna(numero):
-                    return None
+                elif ',' in val_str and '.' not in val_str:
+                    val_str = val_str.replace(',', '')
                     
-                # Filtro de seguridad por si el string original causó una multiplicación por 10
-                if numero > 9000000:
-                    numero = numero / 10
-                    
-                return int(round(numero))
+                return pd.to_numeric(val_str, errors='coerce')
 
+            # Aplicar limpieza limpia a la columna COP
             df_hist['COP_Grafico'] = df_hist[col_cop_name].apply(limpiar_pesos_colombia_enteros) if col_cop_name else None
+
+            # =========================================================================
+            # SOLUCIÓN AL ERROR DE GRÁFICOS (AGRUPACIÓN CORRECTA)
+            # =========================================================================
+            # Agrupamos por Operación para evitar que Plotly duplique/sume los montos en las barras
+            df_graficos = df_hist.groupby('Etiqueta_Grafico').agg({
+                'VALOR UNITARIO (USD)': 'mean', # Promedio del valor unitario de esa op
+                'COP_Grafico': 'mean'           # Promedio del valor nacionalizado de esa op
+            }).reset_index()
 
             cg1, cg2 = st.columns(2)
             with cg1:
-                fig_usd = px.line(df_hist, x='Etiqueta_Grafico', y='VALOR UNITARIO (USD)', markers=True, 
+                fig_usd = px.line(df_graficos, x='Etiqueta_Grafico', y='VALOR UNITARIO (USD)', markers=True, 
                                   title="Evolución del costo unitario internacional (USD)", color_discrete_sequence=['#1E3A8A'])
                 fig_usd.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                                      xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Operación"), yaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Valor USD"))
+                                      xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Operación"), 
+                                      yaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Valor USD"))
                 st.plotly_chart(fig_usd, use_container_width=True)
                 
             with cg2:
-                df_barras_cop = df_hist.dropna(subset=['COP_Grafico'])
+                df_barras_cop = df_graficos.dropna(subset=['COP_Grafico'])
                 if not df_barras_cop.empty:
+                    # Usamos la columna limpia y el formato de dinero en el eje Y
                     fig_cop = px.bar(df_barras_cop, x='Etiqueta_Grafico', y='COP_Grafico', 
                                      title="Variación del costo unitario nacionalizado final (COP)", color_discrete_sequence=['#059669'])
                     fig_cop.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
                                           xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Operación"), 
-                                          yaxis=dict(showgrid=True, gridcolor='#E2E8F0', tickformat=",d", title="Valor COP ($)"))
+                                          yaxis=dict(showgrid=True, gridcolor='#E2E8F0', tickformat="$,.0f", title="Valor COP ($)"))
                     st.plotly_chart(fig_cop, use_container_width=True)
                 else:
-                    fig_vacío = px.bar(title="Variación del costo unitario nacionalizado final (COP)")
-                    fig_vacío.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-                    st.plotly_chart(fig_vacío, use_container_width=True)
+                    fig_vacio = px.bar(title="Variación del costo unitario nacionalizado final (COP)")
+                    fig_vacio.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_vacio, use_container_width=True)
             
+            # =========================================================================
+            # VISUALIZACIÓN EJECUTIVA DE LA TABLA
+            # =========================================================================
             st.markdown("**Desglose detallado de precios por operación histórica:**")
-            columnas_mostrar = ['OPERACIÓN', 'EMISIÓN FRA', 'FRA', 'VALOR UNITARIO (USD)']
-            if col_cop_name: columnas_mostrar.append(col_cop_name)
             
+            columnas_mostrar = ['OPERACIÓN', 'EMISIÓN FRA', 'FRA', 'VALOR UNITARIO (USD)']
+            if col_cop_name: 
+                columnas_mostrar.append('COP_Grafico') # Usamos nuestra columna numérica ya limpia
+            
+            # Quitar filas idénticas duplicadas para la vista limpia del reporte
             df_resumen_tabla = df_hist[columnas_mostrar].drop_duplicates().copy()
             df_resumen_tabla['EMISIÓN FRA'] = df_resumen_tabla['EMISIÓN FRA'].dt.strftime('%Y-%m-%d')
             
+            # Aplicar máscaras de formateo visual premium en texto (Signos de pesos, puntos y comas)
+            df_resumen_tabla['VALOR UNITARIO (USD)'] = df_resumen_tabla['VALOR UNITARIO (USD)'].apply(lambda x: f"USD ${x:,.2f}" if pd.notna(x) else "N/A")
+            
             if col_cop_name:
-                df_resumen_tabla[col_cop_name] = df_resumen_tabla[col_cop_name].apply(lambda x: "None" if pd.isna(x) or str(x).strip().lower()=='none' else x)
-                
-            st.dataframe(df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura'}), use_container_width=True, hide_index=True)
+                df_resumen_tabla['COP_Grafico'] = df_resumen_tabla['COP_Grafico'].apply(
+                    lambda x: f"${int(x):,}".replace(",", ".") if pd.notna(x) else "Por Nacionalizar"
+                )
+                # Renombramos la columna técnica por el título corporativo oficial
+                df_resumen_tabla = df_resumen_tabla.rename(columns={'COP_Grafico': 'VALOR NACIONALIZADO COP'})
+            
+            # Renderizado final del Dataframe estilizado
+            st.dataframe(
+                df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura'}), 
+                use_container_width=True, 
+                hide_index=True
+            )
 
     # --- MÓDULO 2: DETALLE DE OPERACIÓN ---
     elif menu == "🔍 Detalle de Operación":
