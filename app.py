@@ -539,7 +539,8 @@ elif df_plan is not None and df_maestro is not None:
         st.write("---")
         st.subheader("📊 Historial analítico de variaciones y costos de referencia")
         
-        productos_disponibles = sorted(df_maestro['REFERENCIA/MODELO'].dropna().unique())
+        df_maestro['REFERENCIA/MODELO'] = df_maestro['REFERENCIA/MODELO'].astype(str).str.strip().str.upper()
+        productos_disponibles = sorted([p for p in df_maestro['REFERENCIA/MODELO'].dropna().unique() if p not in ['NAN', 'NONE', '', 'NAT']])
         producto_sel = st.selectbox("Seleccione la referencia o modelo a analizar:", productos_disponibles)
         
         df_hist = df_maestro[df_maestro['REFERENCIA/MODELO'] == producto_sel].copy()
