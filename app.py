@@ -551,26 +551,43 @@ elif df_plan is not None and df_maestro is not None:
             def limpiar_pesos_colombia_enteros(valor):
                 if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '']:
                     return None
+                
+                # Si el dato YA ES un número flotante o entero en el Excel, lo dejamos quieto
+                if isinstance(valor, (int, float)):
+                    # Si por alguna razón el número real es flotante pero se desfasó por culpa de un decimal oculto
+                    if valor > 9000000:
+                        return int(round(valor / 10))
+                    return int(round(valor))
+                    
+                # Si el dato es una cadena de texto, aplicamos la disección de formato
                 val_str = str(valor).replace('$', '').replace(' ', '').strip()
                 
-                # Si hay puntos y comas mezclados (ej: 1.436.115,00)
                 if ',' in val_str and '.' in val_str:
-                    if val_str.rfind(',') > val_str.rfind('.'):
-                        val_str = val_str.replace('.', '').replace(',', '.')
-                    else:
+                    # Formato americano con comas en miles y punto decimal: 1,436,115.00
+                    if val_str.rfind('.') > val_str.rfind(','):
                         val_str = val_str.replace(',', '')
-                # Si solo tiene puntos (formato colombiano común: 1.436.115)
                 elif '.' in val_str and ',' not in val_str:
+                    # Formato común colombiano escrito como texto: 1.436.115
                     partes = val_str.split('.')
-                    # Si la última parte tiene 2 dígitos, es un decimal (.00), si no, eran miles
+                    # Si la última parte tiene 2 dígitos (ej: .27 o .91), el punto era un decimal
                     if len(partes[-1]) == 2 and partes[-1].isdigit():
-                        val_str = "".join(partes[:-1])
+                        # Es un decimal real, rearmamos el número quitando los puntos de miles previos si existían
+                        val_str = "".join(partes[:-1]) + "." + partes[-1]
                     else:
+                        # No eran decimales, eran puros puntos de miles (ej: 1.436.115). Los borramos todos.
                         val_str = val_str.replace('.', '')
-                elif ',' in val_str and '.' not in val_str:
-                    val_str = val_str.replace(',', '')
-            
-                return pd.to_numeric(val_str, errors='coerce')
+                        
+                # Convertimos a número final
+                numero = pd.to_numeric(val_str, errors='coerce')
+                
+                if pd.isna(numero):
+                    return None
+                    
+                # Filtro de seguridad por si el string original causó una multiplicación por 10
+                if numero > 9000000:
+                    numero = numero / 10
+                    
+                return int(round(numero))
 
             df_hist['COP_Grafico'] = df_hist[col_cop_name].apply(limpiar_pesos_colombia_enteros) if col_cop_name else None
 
