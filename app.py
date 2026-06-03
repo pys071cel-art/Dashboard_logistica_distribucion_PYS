@@ -51,6 +51,7 @@ st.markdown("""
     .kpi-blue { border-top: 4px solid #1E40AF; }
     .kpi-indigo { border-top: 4px solid #4F46E5; }
     .kpi-emerald { border-top: 4px solid #059669; }
+    .kpi-orange { border-top: 4px solid #EA580C; }
     .kpi-val-p { font-size: 30px; font-weight: 700; color: #1E293B; line-height: 1; }
     .kpi-lbl-p { font-size: 11px; color: #64748B; text-transform: uppercase; margin-top: 8px; letter-spacing: 0.05em; font-weight: 600; }
     
@@ -327,7 +328,7 @@ st.markdown("""
 # 3. CONEXIÓN CORPORATIVA (ONEDRIVE)
 # =========================================================================
 def ejecutar_sincronizacion_onedrive():
-    resultado = {"df_plan": None, "df_maestro": None, "error": None}
+    resultado = {"df_plan": None, "df_maestro": None, "df_pagos": None, "error": None}
     try:
         sec = st.secrets["microsoft_graph"]
         tenant_id = sec["TENANT_ID"]
@@ -358,11 +359,14 @@ def ejecutar_sincronizacion_onedrive():
         url_p = f"https://graph.microsoft.com/v1.0/users/{user_principal_name}/drive/items/{file_plan_id}/content"
         res_p = requests.get(url_p, headers=headers, timeout=15)
         
+        # Lectura de las pestañas del Maestro y la Hoja del plan
         df_m = pd.read_excel(io.BytesIO(res_m.content), sheet_name="BASE_DATOS_MAESTRO")
+        df_pagos = pd.read_excel(io.BytesIO(res_m.content), sheet_name="PAGOS FRA")
         df_p = pd.read_excel(io.BytesIO(res_p.content), sheet_name="Hoja1")
             
         df_p.columns = df_p.columns.str.strip()
         df_m.columns = df_m.columns.str.strip()
+        df_pagos.columns = df_pagos.columns.str.strip()
         
         columnas_fecha = ['EMISIÓN FRA', 'ETA', 'VENCIMIENTO 45 D - 2%', 'VENCIMIENTO 69D 1.5%', 'VENCIMIENTO 89D - 1%', 'VENCIMIENTO 120D - PLENO']
         for col in columnas_fecha:
@@ -371,6 +375,7 @@ def ejecutar_sincronizacion_onedrive():
                 
         resultado["df_plan"] = df_p
         resultado["df_maestro"] = df_m
+        resultado["df_pagos"] = df_pagos
         
     except Exception as e_global:
         resultado["error"] = f"Excepción del sistema de enlace: {e_global}"
@@ -383,9 +388,9 @@ def cargar_datos_seguros():
 data_response = cargar_datos_seguros()
 df_plan = data_response["df_plan"]
 df_maestro = data_response["df_maestro"]
+df_pagos = data_response["df_pagos"]
 error_detectado = data_response["error"]
 
-# Identificar la columna exacta de ESTADO PAGO
 col_estado_pago = None
 if df_maestro is not None:
     col_estado_pago = next((c for c in ['ESTADO_PAGO', 'ESTADO PAGO', 'Estado_Pago'] if c in df_maestro.columns), None)
@@ -428,7 +433,7 @@ with st.sidebar:
         ">
         <strong style="color: #475569;">Proyectos y Servicios SAS</strong><br>
         Área de Planeación e Importaciones<br>
-        <span style='font-size:10px; color:#475569;'>Enterprise System v4.0</span>
+        <span style='font-size:10px; color:#475569;'>Enterprise System v4.5</span>
         </div> """, unsafe_allow_html=True)
 
 # =========================================================================
@@ -437,110 +442,256 @@ with st.sidebar:
 if error_detectado is not None:
     st.error(error_detectado)
 
-elif df_plan is not None and df_maestro is not None:
+elif df_plan is not None and df_maestro is not None and df_pagos is not None:
     fecha_hoy = datetime.now()
     col_cop_name = next((n for n in ['VALOR_NACIONALIZADO', 'VALOR NACIONALIZADO COP', 'VALOR_NACIONALIZADO_COP', 'VALOR NACIONALIZADO'] if n in df_maestro.columns), None)
 
-    # --- MÓDULO 1: TRAZABILIDAD E HISTORIAL ---
+# --- MÓDULO 1: TRAZABILIDAD E HISTORIAL (CONSOLIDADO LOGÍSTICO-FINANCIERO) ---
     if menu == "📈 Trazabilidad e Historial":
         st.title("Control general de operaciones")
-        st.markdown("<p style='color: #64748B; font-size:14px;'>Consolidado estratégico de importaciones distribuido por estatus operativo y financiero.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #64748B; font-size:14px;'>Consolidado estratégico de importaciones distribuido por estatus operativo y financiero de manera ejecutiva.</p>", unsafe_allow_html=True)
         st.write("---")
         
+        # --- PROCESAMIENTO INTERNO DE LA PESTAÑA PAGOS FRA ---
+        if 'df_pagos' not in locals() and 'df_pagos' not in globals():
+            df_pagos = pd.DataFrame(columns=['OPERACIÓN', 'VALOR TOTAL FACTURA (USD)', 'VALOR ABONO (USD)', 'DESCUENTO APLICADO (USD)', 'NOTA APOYO PROVEEDOR (USD)', 'OBSERVACIÓN NOTA APOYO'])
+
+        df_pagos_clean = df_pagos.copy()
+        for col_f in ['VALOR TOTAL FACTURA (USD)', 'VALOR ABONO (USD)', 'DESCUENTO APLICADO (USD)', 'NOTA APOYO PROVEEDOR (USD)']:
+            if col_f in df_pagos_clean.columns:
+                df_pagos_clean[col_f] = pd.to_numeric(df_pagos_clean[col_f], errors='coerce').fillna(0)
+            else:
+                df_pagos_clean[col_f] = 0.0
+                
+        if 'OBSERVACIÓN NOTA APOYO' in df_pagos_clean.columns:
+            df_pagos_clean['OBSERVACIÓN NOTA APOYO'] = df_pagos_clean['OBSERVACIÓN NOTA APOYO'].fillna('').astype(str).str.strip()
+        else:
+            df_pagos_clean['OBSERVACIÓN NOTA APOYO'] = ""
+        
+        # Consolidación agrupando por Operación en la tabla de PAGOS
+        pagos_resumidos = df_pagos_clean.groupby('OPERACIÓN').agg({
+            'VALOR TOTAL FACTURA (USD)': 'first',
+            'VALOR ABONO (USD)': 'sum',
+            'DESCUENTO APLICADO (USD)': 'sum',
+            'NOTA APOYO PROVEEDOR (USD)': 'sum',
+            'OBSERVACIÓN NOTA APOYO': lambda x: " | ".join([v for v in x.unique() if v != '' and pd.notna(v)])
+        }).reset_index()
+        
+        pagos_resumidos['TOTAL_DESCUENTOS_REGISTRADOS'] = pagos_resumidos['DESCUENTO APLICADO (USD)'] + pagos_resumidos['NOTA APOYO PROVEEDOR (USD)']
+        pagos_resumidos['SALDO_CONTABLE'] = pagos_resumidos['VALOR TOTAL FACTURA (USD)'] - (pagos_resumidos['VALOR ABONO (USD)'] + pagos_resumidos['TOTAL_DESCUENTOS_REGISTRADOS'])
+        
+        # --- IDENTIFICACIÓN DINÁMICA DE LA COLUMNA DE COSTOS ---
+        # CORREGIDO: Se eliminó el error de escritura "RAM" que estaba aquí
+        col_costo_maestro = 'VALOR TOTAL EQUIPOS (USD)'
+        if col_costo_maestro not in df_maestro.columns and 'VALOR TOTAL (USD)' in df_maestro.columns:
+            col_costo_maestro = 'VALOR TOTAL (USD)'
+            
+        # Bloques de KPIs principales basados en la data logística
         ckpi1, ckpi2, ckpi3 = st.columns(3)
-        total_usd = df_maestro['VALOR TOTAL (USD)'].sum() if 'VALOR TOTAL (USD)' in df_maestro.columns else 0
+        total_usd = df_maestro[col_costo_maestro].sum() if col_costo_maestro in df_maestro.columns else 0
         total_conts = df_maestro['CONTENEDOR'].nunique() if 'CONTENEDOR' in df_maestro.columns else 0
         total_unis = df_maestro['CANTIDAD'].sum() if 'CANTIDAD' in df_maestro.columns else 0
         
         with ckpi1: st.markdown(f'<div class="kpi-card-premium kpi-blue"><div class="kpi-val-p">USD {total_usd:,.2f}</div><div class="kpi-lbl-p">Inversión Total Equipos</div></div>', unsafe_allow_html=True)
         with ckpi2: st.markdown(f'<div class="kpi-card-premium kpi-indigo"><div class="kpi-val-p">{total_conts}</div><div class="kpi-lbl-p">Contenedores Gestión</div></div>', unsafe_allow_html=True)
         with ckpi3: st.markdown(f'<div class="kpi-card-premium kpi-emerald"><div class="kpi-val-p">{int(total_unis):,}</div><div class="kpi-lbl-p">Unidades Globales Importadas</div></div>', unsafe_allow_html=True)
-            
-        st.markdown("<h3 style='margin-top:10px; margin-bottom:15px;'>📋 Distribución de flujos logísticos y financieros</h3>", unsafe_allow_html=True)
         
-        col_izquierda, col_derecha = st.columns(2)
-        
+        # --- PROCESAMIENTO DE CRUCE PARA INTEGRACIÓN EN TARJETAS ---
         if 'OPERACIÓN' in df_maestro.columns:
-            agg_dict = {
+            columnas_fechas_tramos = ['VENCIMIENTO 45 D - 2%', 'VENCIMIENTO 69D 1.5%', 'VENCIMIENTO 89D - 1%', 'VENCIMIENTO 120D - PLENO']
+            agg_dict_fechas = {}
+            for col_f in columnas_fechas_tramos:
+                if col_f in df_maestro.columns:
+                    df_maestro[col_f] = pd.to_datetime(df_maestro[col_f], errors='coerce')
+                    agg_dict_fechas[col_f] = 'first'
+
+            agg_maestro_pagos = df_maestro.groupby('OPERACIÓN').agg(agg_dict_fechas).reset_index()
+            
+            df_tabla_consolidada = pd.merge(agg_maestro_pagos, pagos_resumidos, on='OPERACIÓN', how='left')
+            df_tabla_consolidada['VALOR TOTAL FACTURA (USD)'] = df_tabla_consolidada['VALOR TOTAL FACTURA (USD)'].fillna(0)
+            df_tabla_consolidada['VALOR ABONO (USD)'] = df_tabla_consolidada['VALOR ABONO (USD)'].fillna(0)
+            df_tabla_consolidada['DESCUENTO APLICADO (USD)'] = df_tabla_consolidada['DESCUENTO APLICADO (USD)'].fillna(0)
+            df_tabla_consolidada['NOTA APOYO PROVEEDOR (USD)'] = df_tabla_consolidada['NOTA APOYO PROVEEDOR (USD)'].fillna(0)
+            df_tabla_consolidada['TOTAL_DESCUENTOS_REGISTRADOS'] = df_tabla_consolidada['TOTAL_DESCUENTOS_REGISTRADOS'].fillna(0)
+            df_tabla_consolidada['SALDO_CONTABLE'] = df_tabla_consolidada['SALDO_CONTABLE'].fillna(0)
+            df_tabla_consolidada['OBSERVACIÓN NOTA APOYO'] = df_tabla_consolidada['OBSERVACIÓN NOTA APOYO'].fillna('')
+
+            # --- RENDERIZADO DE DISTRIBUCIÓN UNIFICADA ---
+            st.markdown("<h3 style='margin-top:25px; margin-bottom:15px;'>📋 Monitoreo Unificado de Distribución y Pagos</h3>", unsafe_allow_html=True)
+            col_izquierda, col_derecha = st.columns(2)
+            
+            agg_dict_ops = {
                 'CONTENEDOR': 'nunique', 
                 'CANTIDAD': 'sum', 
-                'VALOR TOTAL (USD)': 'sum',
+                col_costo_maestro: 'sum',
                 'ESTADO DE DISTRIBUCION': lambda x: str(x.dropna().iloc[0]).strip() if not x.dropna().empty else "En Proceso",
                 'ETA': lambda x: x.dropna().iloc[0] if not x.dropna().empty else pd.NaT
             }
             if col_estado_pago:
-                agg_dict[col_estado_pago] = lambda x: str(x.dropna().iloc[0]).strip().upper() if not x.dropna().empty else ""
+                agg_dict_ops[col_estado_pago] = lambda x: str(x.dropna().iloc[0]).strip().upper() if not x.dropna().empty else ""
 
-            ops_resumen = df_maestro.groupby('OPERACIÓN').agg(agg_dict).reset_index()
+            ops_resumen = df_maestro.groupby('OPERACIÓN').agg(agg_dict_ops).reset_index()
             
-            html_en_transito = ""
-            html_entregados = ""
-            
-            for _, row in ops_resumen.iterrows():
-                eta_str = row['ETA'].strftime('%Y-%m-%d') if pd.notna(row['ETA']) else "Por Confirmar"
-                estado_texto = row['ESTADO DE DISTRIBUCION']
+            def renderizar_tarjeta_operacion(row_op):
+                op_id = row_op['OPERACIÓN']
+                eta_str = row_op['ETA'].strftime('%Y-%m-%d') if pd.notna(row_op['ETA']) else "Por Confirmar"
+                estado_texto = row_op['ESTADO DE DISTRIBUCION']
                 estado_clean = estado_texto.lower().replace('á', 'a')
                 
-                pago_val = row[col_estado_pago] if col_estado_pago in row else ""
-                if "PAGADO" in pago_val:
-                    html_pago_badge = '<span class="pago-badge pago-si">💳 Pago Realizado</span>'
-                else:
-                    html_pago_badge = '<span class="pago-badge pago-no">⏳ Pendiente Pago</span>'
+                costo_equipos = row_op[col_costo_maestro]
                 
-                if 'entregado' in estado_clean or 'llego' in estado_clean:
-                    clase_badge = "status-entregado"
-                elif 'transito' in estado_clean:
-                    clase_badge = "status-transito"
-                elif 'despachar' in estado_clean:
-                    clase_badge = "status-despachar"
-                else:
-                    clase_badge = "status-proceso"
+                # Buscar cruce financiero
+                match_finanzas = df_tabla_consolidada[df_tabla_consolidada['OPERACIÓN'] == op_id]
                 
-                html_card = f"""
-                <div class="timeline-container-p">
-                    <div class="timeline-header-block">
-                        <div class="op-badge-p">{row['OPERACIÓN']}</div>
-                        {html_pago_badge}
-                    </div>
-                    <div>
-                        <div class="timeline-main-text">Monto: USD {row['VALOR TOTAL (USD)']:,.2f}</div>
-                        <div class="timeline-sub-text">
-                            <span>📦 {row['CONTENEDOR']} Contenedor(es)</span>
-                            <span>|</span>
-                            <span>🔢 {int(row['CANTIDAD']):,} Equipos</span>
-                        </div>
-                    </div>
-                    <div class="timeline-footer-block">
-                        <span class="timeline-eta">🏁 Arribo: {eta_str}</span>
-                        <span class="status-badge {clase_badge}">{estado_texto}</span>
-                    </div>
-                </div>
-                """
+                val_factura = costo_equipos
+                val_abonos = 0.0
+                val_descuentos_ya_aplicados = 0.0
+                val_nota = 0.0
+                obs_nota = ""
                 
-                if 'transito' in estado_clean or 'despachar' in estado_clean:
-                    html_en_transito += html_card
-                else:
-                    html_entregados += html_card
+                f_45, f_69, f_89, f_120 = pd.NaT, pd.NaT, pd.NaT, pd.NaT
+                
+                if not match_finanzas.empty:
+                    val_factura = match_finanzas['VALOR TOTAL FACTURA (USD)'].iloc[0] if match_finanzas['VALOR TOTAL FACTURA (USD)'].iloc[0] > 0 else costo_equipos
+                    val_abonos = match_finanzas['VALOR ABONO (USD)'].iloc[0]
+                    val_descuentos_ya_aplicados = match_finanzas['DESCUENTO APLICADO (USD)'].iloc[0]
+                    val_nota = match_finanzas['NOTA APOYO PROVEEDOR (USD)'].iloc[0]
+                    obs_nota = match_finanzas['OBSERVACIÓN NOTA APOYO'].iloc[0]
+                    
+                    if 'VENCIMIENTO 45 D - 2%' in match_finanzas.columns: f_45 = match_finanzas['VENCIMIENTO 45 D - 2%'].iloc[0]
+                    if 'VENCIMIENTO 69D 1.5%' in match_finanzas.columns: f_69 = match_finanzas['VENCIMIENTO 69D 1.5%'].iloc[0]
+                    if 'VENCIMIENTO 89D - 1%' in match_finanzas.columns: f_89 = match_finanzas['VENCIMIENTO 89D - 1%'].iloc[0]
+                    if 'VENCIMIENTO 120D - PLENO' in match_finanzas.columns: f_120 = match_finanzas['VENCIMIENTO 120D - PLENO'].iloc[0]
 
+                # --- LÓGICA DE CALCULO DE DESCUENTOS POR FECHAS VIGENTES ---
+                descuento_proyectado_porcentaje = 0.0
+                texto_vencimiento_especifico = "Límite Pago Pleno No Definido"
+                
+                if pd.notna(f_45) and fecha_hoy <= f_45:
+                    descuento_proyectado_porcentaje = 0.02
+                    dias = (f_45 - fecha_hoy).days
+                    txt_dias = "día" if dias == 1 else "días"
+                    texto_vencimiento_especifico = f"En {dias} {txt_dias} el 2% de descuento"
+                elif pd.notna(f_69) and fecha_hoy <= f_69:
+                    descuento_proyectado_porcentaje = 0.015
+                    dias = (f_69 - fecha_hoy).days
+                    txt_dias = "día" if dias == 1 else "días"
+                    texto_vencimiento_especifico = f"En {dias} {txt_dias} el 1.5% de descuento"
+                elif pd.notna(f_89) and fecha_hoy <= f_89:
+                    descuento_proyectado_porcentaje = 0.01
+                    dias = (f_89 - fecha_hoy).days
+                    txt_dias = "día" if dias == 1 else "días"
+                    texto_vencimiento_especifico = f"En {dias} {txt_dias} el 1% de descuento"
+                elif pd.notna(f_120):
+                    if fecha_hoy <= f_120:
+                        descuento_proyectado_porcentaje = 0.0
+                        dias = (f_120 - fecha_hoy).days
+                        txt_dias = "día" if dias == 1 else "días"
+                        texto_vencimiento_especifico = f"En {dias} {txt_dias} sin intereses"
+                    else:
+                        descuento_proyectado_porcentaje = 0.0
+                        dias_atraso = (fecha_hoy - f_120).days
+                        texto_vencimiento_especifico = f"🚨 VENCIDO hace {dias_atraso} días (Pleno fue {f_120.strftime('%Y-%m-%d')})"
+
+                # Aplicar beneficio únicamente sobre costo_equipos detectado
+                valor_descuento_pronto_pago = costo_equipos * descuento_proyectado_porcentaje
+                
+                # Descuento total a restar = Ya aplicados + Proyectados hoy por fecha límite vigente
+                saldo_a_pagar_final = val_factura - val_abonos - val_descuentos_ya_aplicados - val_nota - valor_descuento_pronto_pago
+                if saldo_a_pagar_final < 0: 
+                    saldo_a_pagar_final = 0.0
+
+                pago_completado = (val_factura > 0 and (val_factura - val_abonos - val_descuentos_ya_aplicados - val_nota) <= 5) or ("PAGADO" in str(row_op.get(col_estado_pago, '')).upper())
+
+                with st.container(border=True):
+                    chead1, chead2 = st.columns([1, 1])
+                    with chead1:
+                        st.markdown(f'<div class="op-badge-p" style="width:fit-content; padding: 4px 12px;">{op_id}</div>', unsafe_allow_html=True)
+                    with chead2:
+                        if pago_completado:
+                            st.markdown('<div style="text-align:right;"><span class="pago-badge pago-si">💳 PAGO REALIZADO</span></div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<div style="text-align:right;"><span class="pago-badge pago-no" style="background-color: #F1F5F9; color: #475569; border: 1px solid #CBD5E1;">⏳ PAGO PENDIENTE</span></div>', unsafe_allow_html=True)
+                    
+                    st.markdown(f"<div style='font-size:14px; font-weight:600; color:#1E293B; margin-top:8px;'>Equipos en Operación: {int(row_op['CANTIDAD']):,} Unidades</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size:12.5px; color:#64748B;'>📦 {row_op['CONTENEDOR']} Contenedor(es) | 💰 Costo de equipos: USD {costo_equipos:,.2f}</div>", unsafe_allow_html=True)
+                    
+                    if pago_completado:
+                        st.markdown(f"""
+                        <div style="background-color: #F0FDF4; border-left: 4px solid #16A34A; padding: 10px; border-radius: 6px; margin-top: 8px; font-size: 13px; color: #14532D;">
+                            <strong>Estatus Financiero:</strong> Facturado: USD {val_factura:,.2f} | <strong>Operación Totalmente Liquidada de Pagos ✅</strong>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        #html_ahorro = f" <span style='color:#16A34A;'>(Ahorro por pronto pago reflejado: -USD {valor_descuento_pronto_pago:,.2f})</span>" if valor_descuento_pronto_pago > 0 else ""
+                        st.markdown(f"""
+                        <div style="background-color: #FFF7ED; border-left: 4px solid #EA580C; padding: 10px; border-radius: 6px; margin-top: 8px; font-size: 13px; color: #7C2D12;">
+                            <strong>Estatus Cuenta:</strong> Factura total: USD {val_factura:,.2f} | Abonos: USD {val_abonos:,.2f}<br>
+                            <span style="font-size:14px;"><strong>Por Pagar (A la fecha): <span style="color: #C2410C;">USD {saldo_a_pagar_final:,.2f}</span></strong></span><br>
+                            ⏳ <strong>Vence:</strong> <span style="color: #9A3412; font-weight:600;">{texto_vencimiento_especifico}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    if val_descuentos_ya_aplicados > 0 or val_nota > 0 or (obs_nota and obs_nota != 'nan' and obs_nota != ''):
+                        html_notas_contenido = ""
+                        if val_descuentos_ya_aplicados > 0:
+                            html_notas_contenido += f"🔹 <strong>Descuento Comercial Aplicado:</strong> USD {val_descuentos_ya_aplicados:,.2f}<br>"
+                        if val_nota > 0:
+                            html_notas_contenido += f"🔹 <strong>Nota de Apoyo Proveedor:</strong> USD {val_nota:,.2f}<br>"
+                        if obs_nota and obs_nota != 'nan' and obs_nota != '':
+                            html_notas_contenido += f"📝 <strong>Observaciones Soporte:</strong> <em>{obs_nota}</em>"
+                            
+                        st.markdown(f"""
+                        <div style="background-color: #F8FAFC; border: 1px dashed #CBD5E1; padding: 10px; margin-top: 6px; border-radius: 6px; font-size: 12px; color: #475569;">
+                            {html_notas_contenido}
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    st.write("")
+                    cfoot1, cfoot2 = st.columns([1, 1])
+                    with cfoot1:
+                        st.markdown(f"<span style='font-size:12px; color:#475569;'>🏁 Arribo (ETA): <strong>{eta_str}</strong></span>", unsafe_allow_html=True)
+                    with cfoot2:
+                        if 'entregado' in estado_clean or 'llego' in estado_clean:
+                            clase_badge = "status-entregado"
+                        elif 'transito' in estado_clean:
+                            clase_badge = "status-transito"
+                        elif 'despachar' in estado_clean:
+                            clase_badge = "status-despachar"
+                        else:
+                            clase_badge = "status-proceso"
+                        st.markdown(f'<div style="text-align:right;"><span class="status-badge {clase_badge}">{estado_texto}</span></div>', unsafe_allow_html=True)
+
+            # Clasificar y renderizar en los paneles
             with col_izquierda:
                 st.markdown("#### 🚢 En Tránsito")
-                if html_en_transito:
-                    st.markdown(html_en_transito, unsafe_allow_html=True)
+                ops_transito = ops_resumen[ops_resumen['ESTADO DE DISTRIBUCION'].str.lower().str.replace('á', 'a').str.contains('transito|despachar', na=False)]
+                if not ops_transito.empty:
+                    for _, row in ops_transito.iterrows():
+                        renderizar_tarjeta_operacion(row)
                 else:
                     st.markdown('<div class="empty-state-text">No hay operaciones registradas en tránsito.</div>', unsafe_allow_html=True)
                     
             with col_derecha:
                 st.markdown("#### 🏢 Ya Llegó / Entregado")
-                if html_entregados:
-                    st.markdown(html_entregados, unsafe_allow_html=True)
+                ops_entregadas = ops_resumen[~ops_resumen['ESTADO DE DISTRIBUCION'].str.lower().str.replace('á', 'a').str.contains('transito|despachar', na=False)]
+                if not ops_entregadas.empty:
+                    for _, row in ops_entregadas.iterrows():
+                        renderizar_tarjeta_operacion(row)
                 else:
                     st.markdown('<div class="empty-state-text">No hay operaciones finalizadas registradas.</div>', unsafe_allow_html=True)
 
+        # --- SECCIÓN: HISTORIAL ANALÍTICO ---
         st.write("---")
         st.subheader("📊 Historial analítico de variaciones y costos de referencia")
         
         df_maestro['REFERENCIA/MODELO'] = df_maestro['REFERENCIA/MODELO'].astype(str).str.strip().str.upper()
-        productos_disponibles = sorted([p for p in df_maestro['REFERENCIA/MODELO'].dropna().unique() if p not in ['NAN', 'NONE', '', 'NAT']])
+        
+        productos_disponibles = sorted(list(set(
+            p for p in df_maestro['REFERENCIA/MODELO'].dropna().unique() 
+            if p not in ['NAN', 'NONE', '', 'NAT', 'NULL']
+        )))
+        
         producto_sel = st.selectbox("Seleccione la referencia o modelo a analizar:", productos_disponibles)
         
         df_hist = df_maestro[df_maestro['REFERENCIA/MODELO'] == producto_sel].copy()
@@ -549,50 +700,32 @@ elif df_plan is not None and df_maestro is not None:
         if not df_hist.empty:
             df_hist['Etiqueta_Grafico'] = df_hist.apply(lambda r: f"{r['OPERACIÓN']} ({r['EMISIÓN FRA'].strftime('%Y-%m-%d')})", axis=1)
             
-# =========================================================================
-            # NUEVA FUNCIÓN DE LIMPIEZA ULTRA-PRECISA
-            # =========================================================================
             def limpiar_pesos_colombia_enteros(valor):
                 if pd.isna(valor) or str(valor).strip().lower() in ['none', 'nan', '', 'null']:
                     return None
-                
-                # Si ya es un número flotante o entero en el Excel, lo dejamos quieto
                 if isinstance(valor, (int, float)):
                     return float(valor)
-                    
-                # Si viene como cadena de texto, limpiamos formatos mixtos
                 val_str = str(valor).replace('$', '').replace(' ', '').strip()
-                
                 if ',' in val_str and '.' in val_str:
-                    # Formato con comas de miles y punto decimal: 969,000.02
                     if val_str.rfind('.') > val_str.rfind(','):
                         val_str = val_str.replace(',', '')
                     else:
-                        # Formato inverso: 969.000,02
                         val_str = val_str.replace('.', '').replace(',', '.')
                 elif '.' in val_str and ',' not in val_str:
                     partes = val_str.split('.')
-                    # Si el último tramo tiene 2 dígitos, era un decimal real (ej: 969000.02)
                     if len(partes[-1]) == 2 and partes[-1].isdigit():
                         val_str = "".join(partes[:-1]) + "." + partes[-1]
                     else:
-                        # Eran puntos de miles (ej: 965.438)
                         val_str = val_str.replace('.', '')
                 elif ',' in val_str and '.' not in val_str:
                     val_str = val_str.replace(',', '')
-                    
                 return pd.to_numeric(val_str, errors='coerce')
 
-            # Aplicar limpieza limpia a la columna COP
             df_hist['COP_Grafico'] = df_hist[col_cop_name].apply(limpiar_pesos_colombia_enteros) if col_cop_name else None
 
-            # =========================================================================
-            # SOLUCIÓN AL ERROR DE GRÁFICOS (AGRUPACIÓN CORRECTA)
-            # =========================================================================
-            # Agrupamos por Operación para evitar que Plotly duplique/sume los montos en las barras
             df_graficos = df_hist.groupby('Etiqueta_Grafico').agg({
-                'VALOR UNITARIO (USD)': 'mean', # Promedio del valor unitario de esa op
-                'COP_Grafico': 'mean'           # Promedio del valor nacionalizado de esa op
+                'VALOR UNITARIO (USD)': 'mean',
+                'COP_Grafico': 'mean'
             }).reset_index()
 
             cg1, cg2 = st.columns(2)
@@ -607,7 +740,6 @@ elif df_plan is not None and df_maestro is not None:
             with cg2:
                 df_barras_cop = df_graficos.dropna(subset=['COP_Grafico'])
                 if not df_barras_cop.empty:
-                    # Usamos la columna limpia y el formato de dinero en el eje Y
                     fig_cop = px.bar(df_barras_cop, x='Etiqueta_Grafico', y='COP_Grafico', 
                                      title="Variación del costo unitario nacionalizado final (COP)", color_discrete_sequence=['#059669'])
                     fig_cop.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
@@ -619,36 +751,26 @@ elif df_plan is not None and df_maestro is not None:
                     fig_vacio.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_vacio, use_container_width=True)
             
-            # =========================================================================
-            # VISUALIZACIÓN EJECUTIVA DE LA TABLA
-            # =========================================================================
             st.markdown("**Desglose detallado de precios por operación histórica:**")
-            
             columnas_mostrar = ['OPERACIÓN', 'EMISIÓN FRA', 'FRA', 'VALOR UNITARIO (USD)']
             if col_cop_name: 
-                columnas_mostrar.append('COP_Grafico') # Usamos nuestra columna numérica ya limpia
+                columnas_mostrar.append('COP_Grafico')
             
-            # Quitar filas idénticas duplicadas para la vista limpia del reporte
             df_resumen_tabla = df_hist[columnas_mostrar].drop_duplicates().copy()
             df_resumen_tabla['EMISIÓN FRA'] = df_resumen_tabla['EMISIÓN FRA'].dt.strftime('%Y-%m-%d')
-            
-            # Aplicar máscaras de formateo visual premium en texto (Signos de pesos, puntos y comas)
             df_resumen_tabla['VALOR UNITARIO (USD)'] = df_resumen_tabla['VALOR UNITARIO (USD)'].apply(lambda x: f"USD ${x:,.2f}" if pd.notna(x) else "N/A")
             
             if col_cop_name:
                 df_resumen_tabla['COP_Grafico'] = df_resumen_tabla['COP_Grafico'].apply(
                     lambda x: f"${int(x):,}".replace(",", ".") if pd.notna(x) else "Por Nacionalizar"
                 )
-                # Renombramos la columna técnica por el título corporativo oficial
                 df_resumen_tabla = df_resumen_tabla.rename(columns={'COP_Grafico': 'VALOR NACIONALIZADO COP'})
             
-            # Renderizado final del Dataframe estilizado
             st.dataframe(
                 df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura'}), 
                 use_container_width=True, 
                 hide_index=True
             )
-
     # --- MÓDULO 2: DETALLE DE OPERACIÓN ---
     elif menu == "🔍 Detalle de Operación":
         st.title("Desglose analítico por operación")
@@ -668,7 +790,7 @@ elif df_plan is not None and df_maestro is not None:
             with c3:
                 num_conts = df_op['CONTENEDOR'].nunique() if 'CONTENEDOR' in df_op.columns else 1
                 flete_tot = df_op['VALOR FLETE FRA'].iloc[0] if 'VALOR FLETE FRA' in df_op.columns and pd.notna(df_op['VALOR FLETE FRA'].iloc[0]) else 0
-                st.markdown(f"**💰 Costo Equipos Operación:** USD {df_op['VALOR TOTAL (USD)'].sum():,.2f}")
+                st.markdown(f"**💰 Costo Equipos Operación:** USD {df_op['VALOR TOTAL EQUIPOS (USD)'].sum():,.2f}")
                 st.markdown(f"**💵 Flete Prorrateado:** USD {flete_tot / max(num_conts, 1):,.2f} por Contenedor")
 
             st.write("")
@@ -715,7 +837,7 @@ elif df_plan is not None and df_maestro is not None:
                         with col_actual:
                             html_total_contenedor = f'<div class="container-box-p"><div class="container-header-p"><span>Contenedor: {cont_id}</span><span>Tipo: 40HQ Estándar</span></div><div class="container-body-p">'
                             for _, p_row in df_items_contenedor.iterrows():
-                                val_usd = p_row['VALOR TOTAL (USD)'] if 'VALOR TOTAL (USD)' in p_row else 0
+                                val_usd = p_row['VALOR TOTAL EQUIPOS (USD)'] if 'VALOR TOTAL EQUIPOS (USD)' in p_row else 0
                                 cant = p_row['CANTIDAD'] if 'CANTIDAD' in p_row else 0
                                 ref = p_row['REFERENCIA/MODELO'] if 'REFERENCIA/MODELO' in p_row else 'Sin Ref'
                                 
@@ -730,13 +852,12 @@ elif df_plan is not None and df_maestro is not None:
                             html_total_contenedor += '</div></div>'
                             st.markdown(html_total_contenedor, unsafe_allow_html=True)
 
-    # --- MÓDULO 3: REFERENCIAS EN PRODUCCIÓN (¡CORREGIDO AQUÍ!) ---
+    # --- MÓDULO 3: REFERENCIAS EN PRODUCCIÓN ---
     elif menu == "🚨 Referencias en Producción":
         st.title("Referencias en producción")
         st.markdown("<p style='color: #64748B; font-size:14px;'>Monitoreo predictivo de órdenes agrupadas por modelo pendientes por asignación de BL y fecha de zarpe.</p>", unsafe_allow_html=True)
         st.write("---")
         
-        # Copia y normalización de la columna BL para el filtrado exacto
         df_plan_copy = df_plan.copy()
         if 'BL' in df_plan_copy.columns:
             df_plan_copy['BL_aux'] = df_plan_copy['BL'].astype(str).str.strip().str.upper()
