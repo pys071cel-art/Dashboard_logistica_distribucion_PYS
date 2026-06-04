@@ -563,45 +563,54 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                     if 'VENCIMIENTO 89D - 1%' in match_finanzas.columns: f_89 = match_finanzas['VENCIMIENTO 89D - 1%'].iloc[0]
                     if 'VENCIMIENTO 120D - PLENO' in match_finanzas.columns: f_120 = match_finanzas['VENCIMIENTO 120D - PLENO'].iloc[0]
 
-                # --- LÓGICA DE CALCULO DE DESCUENTOS POR FECHAS VIGENTES ---
+                # --- ⚡ REGION DE LOGICA MODIFICADA ⚡ ---
                 descuento_proyectado_porcentaje = 0.0
-                texto_vencimiento_especifico = "Límite Pago Pleno No Definido"
+                valor_descuento_pronto_pago = 0.0
                 
-                if pd.notna(f_45) and fecha_hoy <= f_45:
-                    descuento_proyectado_porcentaje = 0.02
-                    dias = (f_45 - fecha_hoy).days
-                    txt_dias = "día" if dias == 1 else "días"
-                    texto_vencimiento_especifico = f"En {dias} {txt_dias} el 2% de descuento"
-                elif pd.notna(f_69) and fecha_hoy <= f_69:
-                    descuento_proyectado_porcentaje = 0.015
-                    dias = (f_69 - fecha_hoy).days
-                    txt_dias = "día" if dias == 1 else "días"
-                    texto_vencimiento_especifico = f"En {dias} {txt_dias} el 1.5% de descuento"
-                elif pd.notna(f_89) and fecha_hoy <= f_89:
-                    descuento_proyectado_porcentaje = 0.01
-                    dias = (f_89 - fecha_hoy).days
-                    txt_dias = "día" if dias == 1 else "días"
-                    texto_vencimiento_especifico = f"En {dias} {txt_dias} el 1% de descuento"
-                elif pd.notna(f_120):
-                    if fecha_hoy <= f_120:
-                        descuento_proyectado_porcentaje = 0.0
-                        dias = (f_120 - fecha_hoy).days
-                        txt_dias = "día" if dias == 1 else "días"
-                        texto_vencimiento_especifico = f"En {dias} {txt_dias} sin intereses"
+                if val_abonos > 0:
+                    # CASO 1: LA FACTURA TIENE ABONOS REGISTRADOS
+                    # Se ignora el calendario del sistema y calculamos el saldo neto exacto con tus datos del Excel
+                    texto_vencimiento_especifico = "✅ Operación en proceso de abonos"
+                    saldo_a_pagar_final = val_factura - val_abonos - val_descuentos_ya_aplicados - val_nota
+                else:
+                    # CASO 2: NO SE HA INICIADO NINGÚN ABONO (VALOR = 0)
+                    # Funciona tal cual como funcionaba originalmente (simulación predictiva por fecha de hoy)
+                    if pd.notna(f_45) and fecha_hoy <= f_45:
+                        descuento_proyectado_porcentaje = 0.02
+                        dias = (f_45 - fecha_hoy).days
+                        texto_vencimiento_especifico = f"En {dias} {'día' if dias == 1 else 'días'} el 2% de descuento"
+                    elif pd.notna(f_69) and fecha_hoy <= f_69:
+                        descuento_proyectado_porcentaje = 0.015
+                        dias = (f_69 - fecha_hoy).days
+                        texto_vencimiento_especifico = f"En {dias} {'día' if dias == 1 else 'días'} el 1.5% de descuento"
+                    elif pd.notna(f_89) and fecha_hoy <= f_89:
+                        descuento_proyectado_porcentaje = 0.01
+                        dias = (f_89 - fecha_hoy).days
+                        texto_vencimiento_especifico = f"En {dias} {'día' if dias == 1 else 'días'} el 1% de descuento"
+                    elif pd.notna(f_120):
+                        if fecha_hoy <= f_120:
+                            descuento_proyectado_porcentaje = 0.0
+                            dias = (f_120 - fecha_hoy).days
+                            texto_vencimiento_especifico = f"En {dias} {'día' if dias == 1 else 'días'} sin intereses"
+                        else:
+                            descuento_proyectado_porcentaje = 0.0
+                            dias_atraso = (fecha_hoy - f_120).days
+                            texto_vencimiento_especifico = f"🚨 VENCIDO hace {dias_atraso} días (Pleno fue {f_120.strftime('%Y-%m-%d')})"
                     else:
                         descuento_proyectado_porcentaje = 0.0
-                        dias_atraso = (fecha_hoy - f_120).days
-                        texto_vencimiento_especifico = f"🚨 VENCIDO hace {dias_atraso} días (Pleno fue {f_120.strftime('%Y-%m-%d')})"
+                        texto_vencimiento_especifico = "Límite Pago Pleno No Definido"
 
-                # Aplicar beneficio únicamente sobre costo_equipos detectado
-                valor_descuento_pronto_pago = costo_equipos * descuento_proyectado_porcentaje
-                
-                # Descuento total a restar = Ya aplicados + Proyectados hoy por fecha límite vigente
-                saldo_a_pagar_final = val_factura - val_abonos - val_descuentos_ya_aplicados - val_nota - valor_descuento_pronto_pago
+                    # El descuento predictivo se calcula sobre el costo de equipos
+                    valor_descuento_pronto_pago = costo_equipos * descuento_proyectado_porcentaje
+                    saldo_a_pagar_final = val_factura - val_abonos - val_descuentos_ya_aplicados - val_nota - valor_descuento_pronto_pago
+
+                # Validar que el saldo final no se vuelva negativo por centavos o diferencias
                 if saldo_a_pagar_final < 0: 
                     saldo_a_pagar_final = 0.0
 
-                pago_completado = (val_factura > 0 and (val_factura - val_abonos - val_descuentos_ya_aplicados - val_nota) <= 5) or ("PAGADO" in str(row_op.get(col_estado_pago, '')).upper())
+                # CAMBIO CRUCIAL: El pago está completado SOLO si el saldo a pagar real es 0 (tolerancia 5 USD)
+                pago_completado = (val_factura > 0) and (saldo_a_pagar_final <= 5.0)
+                # ----------------------------------------
 
                 with st.container(border=True):
                     chead1, chead2 = st.columns([1, 1])
@@ -623,17 +632,18 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                         </div>
                         """, unsafe_allow_html=True)
                     else:
-                        #html_ahorro = f" <span style='color:#16A34A;'>(Ahorro por pronto pago reflejado: -USD {valor_descuento_pronto_pago:,.2f})</span>" if valor_descuento_pronto_pago > 0 else ""
                         st.markdown(f"""
                         <div style="background-color: #FFF7ED; border-left: 4px solid #EA580C; padding: 10px; border-radius: 6px; margin-top: 8px; font-size: 13px; color: #7C2D12;">
                             <strong>Estatus Cuenta:</strong> Factura total: USD {val_factura:,.2f} | Abonos: USD {val_abonos:,.2f}<br>
-                            <span style="font-size:14px;"><strong>Por Pagar (A la fecha): <span style="color: #C2410C;">USD {saldo_a_pagar_final:,.2f}</span></strong></span><br>
+                            <span style="font-size:14px;"><strong>Por Pagar (A la fecha): <span style="color: #C2410C; font-weight:700;">USD {saldo_a_pagar_final:,.2f}</span></strong></span><br>
                             ⏳ <strong>Vence:</strong> <span style="color: #9A3412; font-weight:600;">{texto_vencimiento_especifico}</span>
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    if val_descuentos_ya_aplicados > 0 or val_nota > 0 or (obs_nota and obs_nota != 'nan' and obs_nota != ''):
+                    if val_descuentos_ya_aplicados > 0 or val_nota > 0 or valor_descuento_pronto_pago > 0 or (obs_nota and obs_nota != 'nan' and obs_nota != ''):
                         html_notas_contenido = ""
+                        if valor_descuento_pronto_pago > 0:
+                            html_notas_contenido += f"🔹 <strong>Descuento Proyectado Próximo Pago:</strong> USD {valor_descuento_pronto_pago:,.2f}<br>"
                         if val_descuentos_ya_aplicados > 0:
                             html_notas_contenido += f"🔹 <strong>Descuento Comercial Aplicado:</strong> USD {val_descuentos_ya_aplicados:,.2f}<br>"
                         if val_nota > 0:
