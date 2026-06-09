@@ -328,8 +328,7 @@ st.markdown("""
 # 3. CONEXIÓN CORPORATIVA (ONEDRIVE)
 # =========================================================================
 def ejecutar_sincronizacion_onedrive():
-    # Agregamos df_proyeccion para mapear la pestaña real del maestro
-    resultado = {"df_plan": None, "df_maestro": None, "df_pagos": None, "df_proyeccion": None, "error": None}
+    resultado = {"df_plan": None, "df_maestro": None, "df_pagos": None, "error": None}
     try:
         sec = st.secrets["microsoft_graph"]
         tenant_id = sec["TENANT_ID"]
@@ -354,28 +353,15 @@ def ejecutar_sincronizacion_onedrive():
         headers = {'Authorization': f'Bearer {token}'}
         user_principal_name = "planeacion.proyectos@proyectosyservicios.net"
         
-        # 1. Descarga del archivo EXCEL_MAESTRO
         url_m = f"https://graph.microsoft.com/v1.0/users/{user_principal_name}/drive/items/{file_maestro_id}/content"
         res_m = requests.get(url_m, headers=headers, timeout=15)
         
-        # 2. Descarga del archivo PLAN DE PRODUCCIÓN (Fábrica)
         url_p = f"https://graph.microsoft.com/v1.0/users/{user_principal_name}/drive/items/{file_plan_id}/content"
         res_p = requests.get(url_p, headers=headers, timeout=15)
         
-        excel_maestro = io.BytesIO(res_m.content)
-        
-        # Carga independiente de las 3 pestañas reales de EXCEL_MAESTRO
-        df_m = pd.read_excel(excel_maestro, sheet_name="BASE_DATOS_MAESTRO")
-        df_pagos = pd.read_excel(excel_maestro, sheet_name="PAGOS FRA")
-        
-        try:
-            # Leemos la hoja PROYECCION del archivo maestro
-            df_proy = pd.read_excel(excel_maestro, sheet_name="PROYECCION")
-            df_proy.columns = df_proy.columns.str.strip()
-        except Exception:
-            df_proy = None
-            
-        # Carga del Plan de Fábrica (Pestaña Hoja1 del archivo independiente)
+        # Lectura de las pestañas del Maestro y la Hoja del plan
+        df_m = pd.read_excel(io.BytesIO(res_m.content), sheet_name="BASE_DATOS_MAESTRO")
+        df_pagos = pd.read_excel(io.BytesIO(res_m.content), sheet_name="PAGOS FRA")
         df_p = pd.read_excel(io.BytesIO(res_p.content), sheet_name="Hoja1")
             
         df_p.columns = df_p.columns.str.strip()
@@ -390,7 +376,6 @@ def ejecutar_sincronizacion_onedrive():
         resultado["df_plan"] = df_p
         resultado["df_maestro"] = df_m
         resultado["df_pagos"] = df_pagos
-        resultado["df_proyeccion"] = df_proy
         
     except Exception as e_global:
         resultado["error"] = f"Excepción del sistema de enlace: {e_global}"
@@ -400,14 +385,11 @@ def ejecutar_sincronizacion_onedrive():
 def cargar_datos_seguros():
     return ejecutar_sincronizacion_onedrive()
 
-# --- ASIGNACIÓN GLOBAL CORRECTA ---
 data_response = cargar_datos_seguros()
-df_plan = data_response["df_plan"]          # Plan de Fábrica (Módulo 3)
-df_maestro = data_response["df_maestro"]    # Base de Datos principal (Módulo 1 y 2)
-df_pagos = data_response["df_pagos"]        # Pagos Facturas
-df_proyeccion = data_response["df_proyeccion"] # Pestaña nueva Proyecciones (Módulo 2)
+df_plan = data_response["df_plan"]
+df_maestro = data_response["df_maestro"]
+df_pagos = data_response["df_pagos"]
 error_detectado = data_response["error"]
-
 
 col_estado_pago = None
 if df_maestro is not None:
@@ -799,259 +781,87 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                 use_container_width=True, 
                 hide_index=True
             )
-
-    
-# =========================================================================
-    # --- MÓDULO 2: DETALLE DE OPERACIÓN (FILTRO POR ESTADO DE DISTRIBUCION) --
-    # =========================================================================
+    # --- MÓDULO 2: DETALLE DE OPERACIÓN ---
     elif menu == "🔍 Detalle de Operación":
         st.title("Desglose analítico por operación")
+        lista_ops = sorted(df_maestro['OPERACIÓN'].dropna().unique())
+        op_sel = st.selectbox("Seleccione el Código Operativo (M):", lista_ops, index=0)
+        st.write("---")
         
-        # --- FUNCIÓN DE TRM EN TIEMPO REAL BLINDADA ---
-        def obtener_trm_actual_tiempo_real():
-            import datetime
-            fecha_base = datetime.datetime.now()
-            fecha_consulta = fecha_base
+        df_op = df_maestro[df_maestro['OPERACIÓN'] == op_sel].copy()
+        if not df_op.empty:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"**📄 Número de BL:** `{df_op['BL'].iloc[0] if 'BL' in df_op.columns else 'N/A'}`")
+                st.markdown(f"**🚢 Línea Marítima (Naviera):** {df_op['NAVIERA'].iloc[0] if 'NAVIERA' in df_op.columns else 'N/A'}")
+            with c2:
+                st.markdown(f"**🧾 Factura Comercial (FRA):** `{df_op['FRA'].iloc[0] if 'FRA' in df_op.columns else 'N/A'}`")
+                st.markdown(f"**📅 Fecha Arribo (ETA):** {df_op['ETA'].iloc[0].strftime('%Y-%m-%d') if 'ETA' in df_op.columns and pd.notna(df_op['ETA'].iloc[0]) else 'Pendiente'}")
+            with c3:
+                num_conts = df_op['CONTENEDOR'].nunique() if 'CONTENEDOR' in df_op.columns else 1
+                flete_tot = df_op['VALOR FLETE FRA'].iloc[0] if 'VALOR FLETE FRA' in df_op.columns and pd.notna(df_op['VALOR FLETE FRA'].iloc[0]) else 0
+                st.markdown(f"**💰 Costo Equipos Operación:** USD {df_op['VALOR TOTAL EQUIPOS (USD)'].sum():,.2f}")
+                st.markdown(f"**💵 Flete Prorrateado:** USD {flete_tot / max(num_conts, 1):,.2f} por Contenedor")
+
+            st.write("")
+            st.subheader("⏳ Control de vencimientos financieros")
             
-            for intento in range(4):
-                fecha_str_gob = fecha_consulta.strftime("%Y-%m-%dT00:00:00.000")
-                url_gob = f"https://datos.gov.co/resource/ceb7-324e.json?vigenciadesde={fecha_str_gob}"
-                try:
-                    respuesta = requests.get(url_gob, timeout=4)
-                    if respuesta.status_code == 200:
-                        datos_json = respuesta.json()
-                        if len(datos_json) > 0 and 'valor' in datos_json[0]:
-                            return float(datos_json[0]['valor']), fecha_consulta
-                except:
-                    pass
-                fecha_consulta = fecha_consulta - pd.Timedelta(days=1)
-                
-            try:
-                url_respaldo = "https://open.er-api.com/v6/latest/USD"
-                respuesta_res = requests.get(url_respaldo, timeout=4)
-                if respuesta_res.status_code == 200:
-                    datos_res = respuesta_res.json()
-                    if 'rates' in datos_res and 'COP' in datos_res['rates']:
-                        return float(datos_res['rates']['COP']), fecha_base
-            except:
-                pass
+            pago_operacion = str(df_op[col_estado_pago].iloc[0]).strip().upper() if col_estado_pago and not df_op[col_estado_pago].isna().all() else ""
             
-            return 3950.0, fecha_base
+            if "PAGADO" in pago_operacion:
+                st.markdown('<div class="pago-exitoso-box">🎉 YA ESTÁ PAGO</div>', unsafe_allow_html=True)
+            else:
+                def renderizar_linea_vencimiento_semaforo(fecha_limite, tramo_label):
+                    if pd.isna(fecha_limite):
+                        return f'<div class="semaforo-box-p sem-gris"><span>{tramo_label}</span><strong>Fecha no parametrizada</strong></div>'
+                    dias_restantes = (fecha_limite - fecha_hoy).days
+                    if dias_restantes < 0:
+                        clase_sem = "sem-rojo"
+                        mensaje = f"Plazo vencido hace {abs(dias_restantes)} días"
+                    elif dias_restantes <= 15:
+                        clase_sem = "sem-amarillo"
+                        mensaje = f"Alerta de vencimiento cercano — Quedan {dias_restantes} días"
+                    else:
+                        clase_sem = "sem-verde"
+                        mensaje = f"Plazo vigente y seguro — Quedan {dias_restantes} días"
+                    return f'<div class="semaforo-box-p {clase_sem}"><strong>Vencimiento de pago — {tramo_label}</strong><span>{mensaje} ({fecha_limite.strftime("%Y-%m-%d")})</span></div>'
 
-        if df_maestro is None or df_maestro.empty:
-            st.error("⚠️ La base de datos maestro no se ha cargado correctamente.")
-        else:
-            lista_ops = sorted(df_maestro['OPERACIÓN'].dropna().unique())
-            op_sel = st.selectbox("Seleccione el Código Operativo (M):", lista_ops, index=0)
-            st.write("---")
-            
-            df_op = df_maestro[df_maestro['OPERACIÓN'] == op_sel].copy()
-            if not df_op.empty:
-                
-                # -----------------------------------------------------------------
-                # 🛠️ DETECTOR EXACTO DE TRÁNSITO POR ESTADO DE DISTRIBUCION
-                # -----------------------------------------------------------------
-                col_estado_actual = 'ESTADO DE DISTRIBUCION'
-                estado_texto = ""
-                
-                if col_estado_actual in df_op.columns:
-                    estado_texto = str(df_op[col_estado_actual].iloc[0]).strip().lower()
-                
-                # Evaluamos si contiene la raíz de la palabra en minúsculas sin importar tildes
-                es_en_transito = ("transit" in estado_texto) or ("trán" in estado_texto) or ("tran" in estado_texto)
-                # -----------------------------------------------------------------
+                if 'VENCIMIENTO 45 D - 2%' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 45 D - 2%'].iloc[0], "Tramo 45 días (Descuento 2%)"), unsafe_allow_html=True)
+                if 'VENCIMIENTO 69D 1.5%' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 69D 1.5%'].iloc[0], "Tramo 69 días (Descuento 1.5%)"), unsafe_allow_html=True)
+                if 'VENCIMIENTO 89D - 1%' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 89D - 1%'].iloc[0], "Tramo 89 días (Descuento 1%)"), unsafe_allow_html=True)
+                if 'VENCIMIENTO 120D - PLENO' in df_op.columns:
+                    st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 120D - PLENO'].iloc[0], "Límite 120 días (Pago plato)"), unsafe_allow_html=True)
 
-                # Cabezote informativo de la operación
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.markdown(f"**📄 Número de BL:** `{df_op['BL'].iloc[0] if 'BL' in df_op.columns else 'N/A'}`")
-                    st.markdown(f"**🚢 Línea Marítima (Naviera):** {df_op['NAVIERA'].iloc[0] if 'NAVIERA' in df_op.columns else 'N/A'}")
-                with c2:
-                    st.markdown(f"**🧾 Factura Comercial (FRA):** `{df_op['FRA'].iloc[0] if 'FRA' in df_op.columns else 'N/A'}`")
-                    st.markdown(f"**📅 Fecha Arribo (ETA):** {df_op['ETA'].iloc[0].strftime('%Y-%m-%d') if 'ETA' in df_op.columns and pd.notna(df_op['ETA'].iloc[0]) else 'Pendiente'}")
-                with c3:
-                    num_conts = df_op['CONTENEDOR'].nunique() if 'CONTENEDOR' in df_op.columns else 1
-                    flete_tot = df_op['VALOR FLETE FRA'].iloc[0] if 'VALOR FLETE FRA' in df_op.columns and pd.notna(df_op['VALOR FLETE FRA'].iloc[0]) else 0
-                    st.markdown(f"**💰 Costo Equipos Operación:** USD {df_op['VALOR TOTAL EQUIPOS (USD)'].sum():,.2f}")
-                    st.markdown(f"**💵 Flete Prorrateado:** USD {flete_tot / max(num_conts, 1):,.2f} por Contenedor")
+            st.write("")
+            st.subheader("🚚 Referencias por contenedor")
+            if 'CONTENEDOR' in df_op.columns:
+                contenedores_sistema = df_op['CONTENEDOR'].dropna().unique()
+                if len(contenedores_sistema) > 0:
+                    grid_visual = st.columns(min(len(contenedores_sistema), 2))
+                    for idx, cont_id in enumerate(contenedores_sistema):
+                        df_items_contenedor = df_op[df_op['CONTENEDOR'] == cont_id]
+                        col_actual = grid_visual[idx % len(grid_visual)]
+                        with col_actual:
+                            html_total_contenedor = f'<div class="container-box-p"><div class="container-header-p"><span>Contenedor: {cont_id}</span><span>Tipo: 40HQ Estándar</span></div><div class="container-body-p">'
+                            for _, p_row in df_items_contenedor.iterrows():
+                                val_usd = p_row['VALOR TOTAL EQUIPOS (USD)'] if 'VALOR TOTAL EQUIPOS (USD)' in p_row else 0
+                                cant = p_row['CANTIDAD'] if 'CANTIDAD' in p_row else 0
+                                ref = p_row['REFERENCIA/MODELO'] if 'REFERENCIA/MODELO' in p_row else 'Sin Ref'
+                                
+                                if col_cop_name and pd.notna(p_row[col_cop_name]) and str(p_row[col_cop_name]).strip().lower() != 'none':
+                                    texto_costo_variable = f" | Costo Nac: {p_row[col_cop_name]} COP"
+                                elif 'VALOR UNITARIO (USD)' in p_row:
+                                    texto_costo_variable = f" | Valor: ${p_row['VALOR UNITARIO (USD)']:,.2f} USD"
+                                else:
+                                    texto_costo_variable = ""
 
-                # =========================================================================
-                # APARTADO DE PROYECCIÓN: SÓLO SI ESTÁ EN TRÁNSITO
-                # =========================================================================
-                if es_en_transito:
-                    st.write("---")
-                    st.markdown("### 📋 Proyección Comercial Avanzada de Importación (Operación en Tránsito)")
-                    
-                    df_op['VALOR UNITARIO (USD)'] = pd.to_numeric(df_op['VALOR UNITARIO (USD)'], errors='coerce').fillna(0)
-                    referencias_op = sorted(df_op['REFERENCIA/MODELO'].dropna().unique())
-                    ref_seleccionada = st.selectbox("Seleccione una referencia de esta operación para evaluar:", referencias_op)
-                    
-                    df_ref_actual = df_op[df_op['REFERENCIA/MODELO'] == ref_seleccionada].iloc[0]
-                    costo_base_usd = float(df_ref_actual['VALOR UNITARIO (USD)'])
-                    
-                    arancel_real = 0.0
-                    factor_promedio = 1.150
-                    log_analitica = ""
+                                html_total_contenedor += f'<div class="product-row-p"><span class="product-title-p">{int(cant)} unidades <span class="product-subtitle-p">— {ref}</span></span><span class="product-meta-p">💰 Bloque: ${val_usd:,.2f} USD {texto_costo_variable}</span></div>'
+                            html_total_contenedor += '</div></div>'
+                            st.markdown(html_total_contenedor, unsafe_allow_html=True)
 
-                    # --- PROMEDIO EXCLUSIVO DE COLUMNAS QUE SON FECHAS ---
-                    if 'df_proyeccion' in locals() or 'df_proyeccion' in globals():
-                        if df_proyeccion is not None and not df_proyeccion.empty:
-                            df_p = df_proyeccion.copy()
-                            col_ref_proy = next((c for c in df_p.columns if 'MODELO' in str(c).upper() or 'REFERENCIA' in str(c).upper()), df_p.columns[0])
-                            df_p[col_ref_proy] = df_p[col_ref_proy].fillna('').astype(str).str.strip().str.upper()
-                            
-                            fila_ref = df_p[df_p[col_ref_proy] == str(ref_seleccionada).strip().upper()]
-                            if not fila_ref.empty:
-                                col_aran = next((c for c in df_p.columns if 'ARANCEL' in str(c).upper()), None)
-                                if col_aran and pd.notna(fila_ref[col_aran].iloc[0]):
-                                    try:
-                                        val_ar = float(str(fila_ref[col_aran].iloc[0]).replace('%', '').strip())
-                                        arancel_real = val_ar / 100.0 if val_ar >= 1.0 else val_ar
-                                    except: pass
-
-                                valores_factores_limpios = []
-                                for col_name in df_p.columns:
-                                    es_columna_fecha = False
-                                    try:
-                                        if isinstance(col_name, (datetime, pd.Timestamp)):
-                                            es_columna_fecha = True
-                                        else:
-                                            pd.to_datetime(str(col_name).strip(), format='%Y-%m-%d', errors='raise')
-                                            es_columna_fecha = True
-                                    except:
-                                        try:
-                                            pd.to_datetime(str(col_name).strip(), errors='raise')
-                                            if len(str(col_name).strip()) >= 7:
-                                                es_columna_fecha = True
-                                        except: pass
-
-                                    if es_columna_fecha:
-                                        val_celda = fila_ref[col_name].iloc[0]
-                                        val_numerico = pd.to_numeric(val_celda, errors='coerce')
-                                        if pd.notna(val_numerico) and (1.0 <= float(val_numerico) <= 2.5):
-                                            valores_factores_limpios.append(float(val_numerico))
-
-                                if valores_factores_limpios:
-                                    factor_promedio = sum(valores_factores_limpios) / len(valores_factores_limpios)
-                                    log_analitica += f"✔️ **Análisis de Factores:** Se promediaron con éxito **{len(valores_factores_limpios)} factores históricos**.\n"
-
-                    with st.spinner("Consultando TRM oficial en tiempo real..."):
-                        trm_automatica, _ = obtener_trm_actual_tiempo_real()
-                    log_analitica += f"🌐 **TRM del Día de la Búsqueda:** Tasa oficial de mercado: **${trm_automatica:,.2f} COP**.\n"
-                    st.info(log_analitica)
-
-                    # --- PARÁMETROS EDITABLES DEL SIMULADOR ---
-                    st.markdown("#### ⚙️ Ajuste de Parámetros del Simulador")
-                    c_fac1, c_fac2, c_fac3, c_fac4 = st.columns(4)
-                    with c_fac1:
-                        trm_input = st.number_input("💵 TRM Dinámica Aplicada ($ COP):", min_value=3000.0, max_value=6000.0, value=trm_automatica, step=10.0)
-                    with c_fac2:
-                        arancel_input = st.number_input("🧾 Arancel Base Aplicado (%):", min_value=0.0, max_value=100.0, value=arancel_real * 100.0, step=1.0) / 100.0
-                    with c_fac3:
-                        factor_input = st.number_input("✈️ Factor de Importación (Promedio Real):", min_value=1.0, max_value=3.0, value=factor_promedio, step=0.001, format="%.3f")
-                    with c_fac4:
-                        margen_input = st.number_input("📊 Margen Comercial Deseado (%):", min_value=0.0, max_value=95.0, value=30.0, step=1.0) / 100.0
-
-                    # --- CÁLCULOS MATEMÁTICOS ---
-                    costo_fob_cop = costo_base_usd * trm_input
-                    costo_nacionalizado_cop = costo_fob_cop * factor_input * (1 + arancel_input)
-                    precio_venta_final = costo_nacionalizado_cop / (1 - margen_input) if margen_input < 1.0 else costo_nacionalizado_cop
-
-                    # --- KPI'S ESTILO EJECUTIVO ---
-                    st.write("")
-                    col_r1, col_r2, col_r3 = st.columns(3)
-                    with col_r1:
-                        st.markdown(f"""
-                        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; padding: 15px; border-radius: 8px; text-align: center;">
-                            <div style="color: #64748B; font-size: 11px; font-weight: 600; text-transform: uppercase;">Costo FOB Unitario</div>
-                            <div style="color: #1E293B; font-size: 20px; font-weight: 700; margin-top: 5px;">USD ${costo_base_usd:,.2f}</div>
-                            <div style="color: #475569; font-size: 12px; margin-top: 2px;">≈ {costo_fob_cop:,.0f} COP</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col_r2:
-                        st.markdown(f"""
-                        <div style="background-color: #F0FDF4; border: 1px solid #BBF7D0; padding: 15px; border-radius: 8px; text-align: center;">
-                            <div style="color: #16A34A; font-size: 11px; font-weight: 600; text-transform: uppercase;">Costo de equipos (Nacionalizado)</div>
-                            <div style="color: #14532D; font-size: 20px; font-weight: 700; margin-top: 5px;">${costo_nacionalizado_cop:,.0f} COP</div>
-                            <div style="color: #15803D; font-size: 11px; margin-top: 2px;">Factor Ø: {factor_input:.3f} | Arancel: {arancel_input*100:.1f}%</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with col_r3:
-                        st.markdown(f"""
-                        <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; padding: 15px; border-radius: 8px; text-align: center; border-left: 5px solid #2563EB;">
-                            <div style="color: #2563EB; font-size: 11px; font-weight: 600; text-transform: uppercase;">🚀 Precio Mínimo de Venta Sugerido</div>
-                            <div style="color: #1E3A8A; font-size: 22px; font-weight: 800; margin-top: 5px;">${precio_venta_final:,.0f} COP</div>
-                            <div style="color: #3B82F6; font-size: 11px; margin-top: 2px;">Margen Comercial Reservado: {margen_input*100:.0f}%</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                # --- CONTROL DE VENCIMIENTOS (ORIGINAL) ---
-                st.write("---")
-                st.subheader("⏳ Control de vencimientos financieros")
-                
-                pago_operacion = str(df_op[col_estado_pago].iloc[0]).strip().upper() if col_estado_pago and not df_op[col_estado_pago].isna().all() else ""
-                
-                if "PAGADO" in pago_operacion:
-                    st.markdown('<div class="pago-exitoso-box">🎉 YA ESTÁ PAGO</div>', unsafe_allow_html=True)
-                else:
-                    def renderizar_linea_vencimiento_semaforo(fecha_limite, tramo_label):
-                        if pd.isna(fecha_limite):
-                            return f'<div class="semaforo-box-p sem-gris"><span>{tramo_label}</span><strong>Fecha no parametrizada</strong></div>'
-                        dias_restantes = (fecha_limite - fecha_hoy).days
-                        if dias_restantes < 0:
-                            clase_sem = "sem-rojo"
-                            mensaje = f"Plazo vencido hace {abs(dias_restantes)} días"
-                        elif dias_restantes <= 15:
-                            clase_sem = "sem-amarillo"
-                            mensaje = f"Alerta de vencimiento cercano — Quedan {dias_restantes} días"
-                        else:
-                            clase_sem = "sem-verde"
-                            mensaje = f"Plazo vigente y seguro — Quedan {dias_restantes} días"
-                        return f'<div class="semaforo-box-p {clase_sem}"><strong>Vencimiento de pago — {tramo_label}</strong><span>{mensaje} ({fecha_limite.strftime("%Y-%m-%d")})</span></div>'
-
-                    if 'VENCIMIENTO 45 D - 2%' in df_op.columns:
-                        st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 45 D - 2%'].iloc[0], "Tramo 45 días (Descuento 2%)"), unsafe_allow_html=True)
-                    if 'VENCIMIENTO 69D 1.5%' in df_op.columns:
-                        st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 69D 1.5%'].iloc[0], "Tramo 69 días (Descuento 1.5%)"), unsafe_allow_html=True)
-                    if 'VENCIMIENTO 89D - 1%' in df_op.columns:
-                        st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 89D - 1%'].iloc[0], "Tramo 89 días (Descuento 1%)"), unsafe_allow_html=True)
-                    if 'VENCIMIENTO 120D - PLENO' in df_op.columns:
-                        st.markdown(renderizar_linea_vencimiento_semaforo(df_op['VENCIMIENTO 120D - PLENO'].iloc[0], "Límite 120 días (Pago plato)"), unsafe_allow_html=True)
-
-                # =========================================================================
-                # RENDERIZACIÓN DE TARJETAS DE CONTENEDORES (TU LÓGICA ORIGINAL EXCEL)
-                # =========================================================================
-                st.write("")
-                st.subheader("🚚 Referencias por contenedor")
-                if 'CONTENEDOR' in df_op.columns:
-                    contenedores_sistema = df_op['CONTENEDOR'].dropna().unique()
-                    if len(contenedores_sistema) > 0:
-                        grid_visual = st.columns(min(len(contenedores_sistema), 2))
-                        for idx, cont_id in enumerate(contenedores_sistema):
-                            df_items_contenedor = df_op[df_op['CONTENEDOR'] == cont_id]
-                            col_actual = grid_visual[idx % len(grid_visual)]
-                            with col_actual:
-                                html_total_contenedor = f'<div class="container-box-p"><div class="container-header-p"><span>Contenedor: {cont_id}</span><span>Tipo: 40HQ Estándar</span></div><div class="container-body-p">'
-                                for _, p_row in df_items_contenedor.iterrows():
-                                    val_usd = p_row['VALOR TOTAL EQUIPOS (USD)'] if 'VALOR TOTAL EQUIPOS (USD)' in p_row else 0
-                                    cant = p_row['CANTIDAD'] if 'CANTIDAD' in p_row else 0
-                                    ref = p_row['REFERENCIA/MODELO'] if 'REFERENCIA/MODELO' in p_row else 'Sin Ref'
-                                    
-                                    if col_cop_name and pd.notna(p_row[col_cop_name]) and str(p_row[col_cop_name]).strip().lower() != 'none':
-                                        try:
-                                            val_cop_num = float(p_row[col_cop_name])
-                                            texto_costo_variable = f" | Costo de equipos: ${val_cop_num:,.0f} COP"
-                                        except:
-                                            texto_costo_variable = f" | Costo de equipos: {p_row[col_cop_name]} COP"
-                                    elif 'VALOR UNITARIO (USD)' in p_row:
-                                        texto_costo_variable = f" | Valor: ${p_row['VALOR UNITARIO (USD)']:,.2f} USD"
-                                    else:
-                                        texto_costo_variable = ""
-
-                                    html_total_contenedor += f'<div class="product-row-p"><span class="product-title-p">{int(cant)} unidades <span class="product-subtitle-p">— {ref}</span></span><span class="product-meta-p">💰 Bloque: ${val_usd:,.2f} USD {texto_costo_variable}</span></div>'
-                                html_total_contenedor += '</div></div>'
-                                st.markdown(html_total_contenedor, unsafe_allow_html=True)
-                            
     # --- MÓDULO 3: REFERENCIAS EN PRODUCCIÓN ---
     elif menu == "🚨 Referencias en Producción":
         st.title("Referencias en producción")
