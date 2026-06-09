@@ -405,7 +405,7 @@ data_response = cargar_datos_seguros()
 df_plan = data_response["df_plan"]          # Plan de Fábrica (Módulo 3)
 df_maestro = data_response["df_maestro"]    # Base de Datos principal (Módulo 1 y 2)
 df_pagos = data_response["df_pagos"]        # Pagos Facturas
-df_proyeccion = data_response["df_proyeccion"] # Pestaña nueva Proyecciones (Módulo 2)
+df_proyeccion = data_response.get("df_proyeccion", pd.DataFrame()) # Pestaña nueva Proyecciones (Módulo 2)
 error_detectado = data_response["error"]
 
 
