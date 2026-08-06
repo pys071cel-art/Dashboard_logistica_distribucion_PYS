@@ -419,7 +419,7 @@ if df_maestro is not None:
 with st.sidebar:
     st.write("")
     if logo:
-        st.image(logo, use_container_width=True)
+        st.image(logo, width='stretch')
     else:
         st.markdown("<h2 style='margin-bottom:0px; font-size:22px;'>PROYECTOS Y SERVICIOS</h2>", unsafe_allow_html=True)
         
