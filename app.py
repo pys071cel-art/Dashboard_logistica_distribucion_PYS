@@ -508,12 +508,12 @@ def cargar_datos_seguros():
 
 # --- ASIGNACIÓN GLOBAL CORRECTA ---
 data_response = cargar_datos_seguros()
-df_plan = data_response["df_plan"]              # Plan de Fábrica (Módulo 3)
-df_maestro = data_response["df_maestro"]        # Base de Datos principal (Módulo 1 y 2)
-df_pagos = data_response["df_pagos"]            # Pagos Facturas
-df_proyeccion = data_response["df_proyeccion"]  # Pestaña nueva Proyecciones (Módulo 2)
-df_notas_credito = data_response["df_notas_credito"]
-error_detectado = data_response["error"]
+df_plan = data_response.get("df_plan")              # Plan de Fábrica (Módulo 3)
+df_maestro = data_response.get("df_maestro")        # Base de Datos principal (Módulo 1 y 2)
+df_pagos = data_response.get("df_pagos")            # Pagos Facturas
+df_proyeccion = data_response.get("df_proyeccion")  # Pestaña nueva Proyecciones (Módulo 2)
+df_notas_credito = data_response.get("df_notas_credito")
+error_detectado = data_response.get("error")
 
 col_estado_pago = None
 if df_maestro is not None:
@@ -1317,4 +1317,5 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                     st.markdown(html_tarjeta, unsafe_allow_html=True)
         else:
             st.info("No se registran referencias pendientes por despachar en el plan actual.")
+
 
