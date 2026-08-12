@@ -532,7 +532,7 @@ if 'ir_a_detalle_operacion' in st.session_state:
 with st.sidebar:
     st.write("")
     if logo:
-        st.image(logo, use_column_width=True)
+        st.image(logo, width='stretch')
     else:
         st.markdown("<h2 style='margin-bottom:0px; font-size:22px;'>PROYECTOS Y SERVICIOS</h2>", unsafe_allow_html=True)
         
