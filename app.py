@@ -606,11 +606,11 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
             if not operaciones_mes:
                 texto_barra = f"Sin operaciones programadas para llegar en {etiqueta_mes_actual}."
             elif len(operaciones_mes) == 1:
-                texto_barra = f"En este mes llega la operación:&nbsp;<strong>{operaciones_mes[0]}</strong>."
+                texto_barra = f"Operaciones pendientes por llegar este mes:&nbsp;<strong>{operaciones_mes[0]}</strong>."
             else:
                 primeros = ", ".join(operaciones_mes[:-1])
                 ultimo = operaciones_mes[-1]
-                texto_barra = f"En este mes llegan las operaciones:&nbsp;<strong>{primeros}&nbsp;y&nbsp;{ultimo}</strong>."
+                texto_barra = f"Operaciones pendientes por llegar este mes:&nbsp;<strong>{primeros}&nbsp;y&nbsp;{ultimo}</strong>."
 
             st.markdown(f"""
             <div style="background-color:#F5F4FF; border:1px solid #E3E1FA; border-radius:10px; padding:9px 16px; font-size:14px; color:#1E293B; display:flex; align-items:center;">
