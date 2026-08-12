@@ -4,6 +4,7 @@ import plotly.express as px
 from datetime import datetime
 import requests
 import io
+import openpyxl
 from PIL import Image
 
 # Intentar cargar el logo corporativo
@@ -78,14 +79,30 @@ st.markdown("""
         justify-content: space-between;
         align-items: center;
     }
-    .op-badge-p { 
-        background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%); 
-        color: white; 
-        padding: 6px 12px; 
-        font-weight: 700; 
-        border-radius: 8px; 
+    .op-badge-p {
+        background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%);
+        color: white;
+        padding: 6px 12px;
+        font-weight: 700;
+        border-radius: 8px;
         font-size: 13px;
         text-align: center;
+    }
+    /* Badge de operación clicable (botón real disfrazado del mismo estilo del badge) */
+    div[data-testid="stMarkdown"]:has(.op-badge-marker) + div[data-testid="stButton"] button {
+        background: linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%) !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        font-size: 13px !important;
+        padding: 4px 12px !important;
+        min-height: unset !important;
+    }
+    div[data-testid="stMarkdown"]:has(.op-badge-marker) + div[data-testid="stButton"] button:hover {
+        color: #E2E8F0 !important;
+        border: none !important;
+        background: linear-gradient(135deg, #274690 0%, #16213e 100%) !important;
     }
     .timeline-main-text {
         font-size: 14px;
@@ -324,12 +341,82 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# =========================================================================
-# 3. CONEXIÓN CORPORATIVA (ONEDRIVE)
-# =========================================================================
+def _resolver_paleta_tema(wb):
+    """Extrae los 12 colores del tema del workbook (hex sin '#'), en el orden que usa
+    openpyxl para el índice 'theme' de una celda: dk1, lt1, dk2, lt2, accent1..accent6, hlink, folHlink."""
+    try:
+        from xml.etree import ElementTree as ET
+        theme_xml = wb.loaded_theme
+        if not theme_xml:
+            return None
+        ns = {'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'}
+        root = ET.fromstring(theme_xml)
+        esquema = root.find('.//a:clrScheme', ns)
+        orden = ['dk1', 'lt1', 'dk2', 'lt2', 'accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6', 'hlink', 'folHlink']
+        colores = []
+        for tag in orden:
+            nodo = esquema.find(f'a:{tag}', ns)
+            hijo = list(nodo)[0]
+            if hijo.tag.endswith('srgbClr'):
+                colores.append(hijo.get('val'))
+            elif hijo.tag.endswith('sysClr'):
+                colores.append(hijo.get('lastClr', 'FFFFFF'))
+            else:
+                colores.append('FFFFFF')
+        # Excel intercambia dk1/lt1 y dk2/lt2 respecto al índice 'theme' que usan las celdas
+        colores[0], colores[1] = colores[1], colores[0]
+        colores[2], colores[3] = colores[3], colores[2]
+        return colores
+    except Exception:
+        return None
+
+def _aplicar_tint(hex_color, tint):
+    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+    def ajustar(c):
+        return c * (1 + tint) if tint < 0 else c * (1 - tint) + (255 * tint)
+    return tuple(int(round(min(max(ajustar(c), 0), 255))) for c in (r, g, b))
+
+def detectar_filas_qty_azul(excel_bytes, sheet_name, col_nombre='QTY'):
+    """Devuelve el set de índices de fila (0-based, relativos a los datos, sin encabezado)
+    cuya celda de la columna indicada tiene relleno azul claro en el Excel original.
+    Esto identifica cantidades que, según la convención del Plan, no se van a enviar.
+    Resuelve tanto colores RGB directos (paleta Standard Colors) como colores de tema
+    con tint (paleta Theme Colors), que es la fila superior del selector de relleno de Excel."""
+    filas_azules = set()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(excel_bytes), data_only=True)
+        ws = wb[sheet_name]
+        paleta_tema = _resolver_paleta_tema(wb)
+        encabezados = [str(c.value).strip() if c.value is not None else "" for c in next(ws.iter_rows(min_row=1, max_row=1))]
+        if col_nombre not in encabezados:
+            return filas_azules
+        col_idx = encabezados.index(col_nombre)
+
+        for i, fila in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row)):
+            celda = fila[col_idx]
+            color = celda.fill.fgColor if celda.fill is not None else None
+            rgb = None
+            if color is not None:
+                tipo_color = getattr(color, 'type', None)
+                if tipo_color == 'rgb' and isinstance(color.rgb, str) and len(color.rgb) == 8:
+                    rgb = (int(color.rgb[2:4], 16), int(color.rgb[4:6], 16), int(color.rgb[6:8], 16))
+                elif tipo_color == 'theme' and paleta_tema is not None:
+                    idx = color.theme
+                    if isinstance(idx, int) and 0 <= idx < len(paleta_tema):
+                        rgb = _aplicar_tint(paleta_tema[idx], color.tint or 0.0)
+
+            if rgb:
+                r, g, b = rgb
+                # Heurística: azul claro -> el canal azul domina sobre rojo/verde y hay buena luminosidad
+                if b > r + 15 and b > g + 5 and b > 150:
+                    filas_azules.add(i)
+    except Exception:
+        return set()
+    return filas_azules
+
 def ejecutar_sincronizacion_onedrive():
     # Agregamos df_proyeccion para mapear la pestaña real del maestro
-    resultado = {"df_plan": None, "df_maestro": None, "df_pagos": None, "df_proyeccion": None, "error": None}
+    resultado = {"df_plan": None, "df_maestro": None, "df_pagos": None, "df_proyeccion": None, "df_notas_credito": None, "error": None}
     try:
         sec = st.secrets["microsoft_graph"]
         tenant_id = sec["TENANT_ID"]
@@ -362,23 +449,41 @@ def ejecutar_sincronizacion_onedrive():
         url_p = f"https://graph.microsoft.com/v1.0/users/{user_principal_name}/drive/items/{file_plan_id}/content"
         res_p = requests.get(url_p, headers=headers, timeout=15)
         
-        excel_maestro = io.BytesIO(res_m.content)
+        # SOLUCIÓN CRÍTICA: Cargamos el archivo en un objeto ExcelFile una sola vez
+        archivo_maestro_unico = pd.ExcelFile(io.BytesIO(res_m.content))
         
-        # Carga independiente de las 3 pestañas reales de EXCEL_MAESTRO
-        df_m = pd.read_excel(excel_maestro, sheet_name="BASE_DATOS_MAESTRO")
-        df_pagos = pd.read_excel(excel_maestro, sheet_name="PAGOS FRA")
+        # Extracción limpia de pestañas desde el mismo objeto cargado en memoria
+        df_m = archivo_maestro_unico.parse(sheet_name="BASE_DATOS_MAESTRO")
+        df_pagos = archivo_maestro_unico.parse(sheet_name="PAGOS FRA")
         
         try:
-            # Leemos la hoja PROYECCION del archivo maestro
-            df_proy = pd.read_excel(excel_maestro, sheet_name="PROYECCION")
+            df_proy = archivo_maestro_unico.parse(sheet_name="PROYECCION")
             df_proy.columns = df_proy.columns.str.strip()
         except Exception:
             df_proy = None
+
+        try:
+            # Ahora .parse funcionará perfectamente sin corromper la memoria, saltando las 3 filas muertas
+            df_nc = archivo_maestro_unico.parse(sheet_name="NOTA CREDITO")
+            df_nc.columns = df_nc.columns.str.strip()
+            df_nc = df_nc.dropna(how='all')
+
+            if 'DESCRIPCIÓN' in df_nc.columns:
+                df_nc['DESCRIPCIÓN'] = df_nc['DESCRIPCIÓN'].astype(str).str.strip()
+        except Exception as e_nc:
+            # Guardamos el error en los logs internos por si el nombre de la hoja cambia
+            print(f"Error parseando NOTAS CREDITO: {e_nc}")
+            df_nc = None
             
         # Carga del Plan de Fábrica (Pestaña Hoja1 del archivo independiente)
         df_p = pd.read_excel(io.BytesIO(res_p.content), sheet_name="Hoja1")
-            
+
         df_p.columns = df_p.columns.str.strip()
+
+        # Marcamos las filas cuya celda QTY está resaltada en azul claro: son cantidades
+        # pequeñas que no se van a enviar (se cancelan), según la convención del Plan.
+        filas_qty_azul = detectar_filas_qty_azul(res_p.content, sheet_name="Hoja1", col_nombre="QTY")
+        df_p['QTY_NO_SE_ENVIA'] = [i in filas_qty_azul for i in range(len(df_p))]
         df_m.columns = df_m.columns.str.strip()
         df_pagos.columns = df_pagos.columns.str.strip()
         
@@ -391,6 +496,7 @@ def ejecutar_sincronizacion_onedrive():
         resultado["df_maestro"] = df_m
         resultado["df_pagos"] = df_pagos
         resultado["df_proyeccion"] = df_proy
+        resultado["df_notas_credito"] = df_nc
         
     except Exception as e_global:
         resultado["error"] = f"Excepción del sistema de enlace: {e_global}"
@@ -402,16 +508,23 @@ def cargar_datos_seguros():
 
 # --- ASIGNACIÓN GLOBAL CORRECTA ---
 data_response = cargar_datos_seguros()
-df_plan = data_response["df_plan"]          # Plan de Fábrica (Módulo 3)
-df_maestro = data_response["df_maestro"]    # Base de Datos principal (Módulo 1 y 2)
-df_pagos = data_response["df_pagos"]        # Pagos Facturas
-df_proyeccion = data_response.get("df_proyeccion", pd.DataFrame()) # Pestaña nueva Proyecciones (Módulo 2)
+df_plan = data_response["df_plan"]              # Plan de Fábrica (Módulo 3)
+df_maestro = data_response["df_maestro"]        # Base de Datos principal (Módulo 1 y 2)
+df_pagos = data_response["df_pagos"]            # Pagos Facturas
+df_proyeccion = data_response["df_proyeccion"]  # Pestaña nueva Proyecciones (Módulo 2)
+df_notas_credito = data_response["df_notas_credito"]
 error_detectado = data_response["error"]
-
 
 col_estado_pago = None
 if df_maestro is not None:
     col_estado_pago = next((c for c in ['ESTADO_PAGO', 'ESTADO PAGO', 'Estado_Pago'] if c in df_maestro.columns), None)
+
+# --- RESOLUCIÓN DE NAVEGACIÓN PENDIENTE (clic en badge de operación) ---
+# Debe ejecutarse ANTES de instanciar el radio del menú, porque Streamlit no permite
+# modificar st.session_state de un widget después de que ya fue creado en esta misma corrida.
+if 'ir_a_detalle_operacion' in st.session_state:
+    st.session_state['menu_radio'] = "🔍 Detalle de Operación"
+    st.session_state['select_operacion_detalle'] = st.session_state.pop('ir_a_detalle_operacion')
 
 # =========================================================================
 # 4. MENÚ LATERAL
@@ -419,7 +532,7 @@ if df_maestro is not None:
 with st.sidebar:
     st.write("")
     if logo:
-        st.image(logo, use_container_width=True)
+        st.image(logo, use_column_width=True)
     else:
         st.markdown("<h2 style='margin-bottom:0px; font-size:22px;'>PROYECTOS Y SERVICIOS</h2>", unsafe_allow_html=True)
         
@@ -429,7 +542,8 @@ with st.sidebar:
     menu = st.radio(
         "Módulos Estratégicos:",
         ["📈 Trazabilidad e Historial", "🔍 Detalle de Operación", "🚨 Referencias en Producción"],
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="menu_radio"
     )
     
     st.write("")
@@ -468,8 +582,60 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
     if menu == "📈 Trazabilidad e Historial":
         st.title("Control general de operaciones")
         st.markdown("<p style='color: #64748B; font-size:14px;'>Consolidado estratégico de importaciones distribuido por estatus operativo y financiero de manera ejecutiva.</p>", unsafe_allow_html=True)
-        st.write("---")
-        
+
+        # --- BARRA INFORMATIVA: LLEGADAS DEL MES ACTUAL (SEGUIMIENTO RÁPIDO, AUTOMÁTICA) ---
+        df_eta_valido = df_maestro.dropna(subset=['ETA']).copy() if 'ETA' in df_maestro.columns else pd.DataFrame()
+
+        if not df_eta_valido.empty:
+            periodo_actual = pd.Period(fecha_hoy, freq='M')
+            df_eta_valido['AÑO_MES'] = df_eta_valido['ETA'].dt.to_period('M')
+            df_mes = df_eta_valido[df_eta_valido['AÑO_MES'] == periodo_actual]
+
+            # Solo lo que falta por llegar: excluimos lo que el ESTADO DE DISTRIBUCION ya marca como entregado/llegado
+            if 'ESTADO DE DISTRIBUCION' in df_mes.columns:
+                estado_clean_mes = df_mes['ESTADO DE DISTRIBUCION'].astype(str).str.lower().str.replace('á', 'a', regex=False)
+                ya_llego_mes = estado_clean_mes.str.contains('entregado', na=False) | estado_clean_mes.str.contains('llego', na=False)
+                df_mes = df_mes[~ya_llego_mes]
+
+            meses_es = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+                        7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
+            etiqueta_mes_actual = f"{meses_es[periodo_actual.month]} {periodo_actual.year}"
+
+            operaciones_mes = sorted(df_mes['OPERACIÓN'].dropna().unique()) if 'OPERACIÓN' in df_mes.columns else []
+
+            if not operaciones_mes:
+                texto_barra = f"Sin operaciones programadas para llegar en {etiqueta_mes_actual}."
+            elif len(operaciones_mes) == 1:
+                texto_barra = f"En este mes llega la operación:&nbsp;<strong>{operaciones_mes[0]}</strong>."
+            else:
+                primeros = ", ".join(operaciones_mes[:-1])
+                ultimo = operaciones_mes[-1]
+                texto_barra = f"En este mes llegan las operaciones:&nbsp;<strong>{primeros}&nbsp;y&nbsp;{ultimo}</strong>."
+
+            st.markdown(f"""
+            <div style="background-color:#F5F4FF; border:1px solid #E3E1FA; border-radius:10px; padding:9px 16px; font-size:14px; color:#1E293B; display:flex; align-items:center;">
+            📅 {texto_barra}
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button("Referencias que llegan"):
+                st.session_state['mostrar_llegadas_mes'] = not st.session_state.get('mostrar_llegadas_mes', False)
+
+            if st.session_state.get('mostrar_llegadas_mes') and 'REFERENCIA/MODELO' in df_mes.columns:
+                df_mes_ref = df_mes.copy()
+                df_mes_ref['REFERENCIA/MODELO'] = df_mes_ref['REFERENCIA/MODELO'].astype(str).str.strip().str.upper()
+                tabla_llegadas = df_mes_ref.groupby(['REFERENCIA/MODELO', 'ETA']).agg({'CANTIDAD': 'sum'}).reset_index()
+                tabla_llegadas = tabla_llegadas.sort_values('ETA')
+                tabla_llegadas['ETA'] = tabla_llegadas['ETA'].dt.strftime('%Y-%m-%d')
+
+                st.dataframe(
+                    tabla_llegadas.rename(columns={'REFERENCIA/MODELO': 'Referencia', 'CANTIDAD': 'Cantidad', 'ETA': 'Fecha de llegada'}),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        st.markdown("<hr style='margin:8px 0 18px 0; border:none; border-top:1px solid #E2E8F0;'>", unsafe_allow_html=True)
+
         # --- PROCESAMIENTO INTERNO DE LA PESTAÑA PAGOS FRA ---
         if 'df_pagos' not in locals() and 'df_pagos' not in globals():
             df_pagos = pd.DataFrame(columns=['OPERACIÓN', 'VALOR TOTAL FACTURA (USD)', 'VALOR ABONO (USD)', 'DESCUENTO APLICADO (USD)', 'NOTA APOYO PROVEEDOR (USD)', 'OBSERVACIÓN NOTA APOYO'])
@@ -503,7 +669,7 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
         col_costo_maestro = 'VALOR TOTAL EQUIPOS (USD)'
         if col_costo_maestro not in df_maestro.columns and 'VALOR TOTAL (USD)' in df_maestro.columns:
             col_costo_maestro = 'VALOR TOTAL (USD)'
-            
+
         # Bloques de KPIs principales basados en la data logística
         ckpi1, ckpi2, ckpi3 = st.columns(3)
         total_usd = df_maestro[col_costo_maestro].sum() if col_costo_maestro in df_maestro.columns else 0
@@ -550,7 +716,7 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
 
             ops_resumen = df_maestro.groupby('OPERACIÓN').agg(agg_dict_ops).reset_index()
             
-            def renderizar_tarjeta_operacion(row_op):
+            def renderizar_tarjeta_operacion(row_op, contexto):
                 op_id = row_op['OPERACIÓN']
                 eta_str = row_op['ETA'].strftime('%Y-%m-%d') if pd.notna(row_op['ETA']) else "Por Confirmar"
                 estado_texto = row_op['ESTADO DE DISTRIBUCION']
@@ -575,7 +741,7 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                     val_descuentos_ya_aplicados = match_finanzas['DESCUENTO APLICADO (USD)'].iloc[0]
                     val_nota = match_finanzas['NOTA APOYO PROVEEDOR (USD)'].iloc[0]
                     obs_nota = match_finanzas['OBSERVACIÓN NOTA APOYO'].iloc[0]
-                    
+
                     if 'VENCIMIENTO 45 D - 2%' in match_finanzas.columns: f_45 = match_finanzas['VENCIMIENTO 45 D - 2%'].iloc[0]
                     if 'VENCIMIENTO 69D 1.5%' in match_finanzas.columns: f_69 = match_finanzas['VENCIMIENTO 69D 1.5%'].iloc[0]
                     if 'VENCIMIENTO 89D - 1%' in match_finanzas.columns: f_89 = match_finanzas['VENCIMIENTO 89D - 1%'].iloc[0]
@@ -633,7 +799,10 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                 with st.container(border=True):
                     chead1, chead2 = st.columns([1, 1])
                     with chead1:
-                        st.markdown(f'<div class="op-badge-p" style="width:fit-content; padding: 4px 12px;">{op_id}</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="op-badge-marker"></div>', unsafe_allow_html=True)
+                        if st.button(op_id, key=f"badge_{contexto}_{op_id}", help="Ver detalle de esta operación"):
+                            st.session_state['ir_a_detalle_operacion'] = op_id
+                            st.rerun()
                     with chead2:
                         if pago_completado:
                             st.markdown('<div style="text-align:right;"><span class="pago-badge pago-si">💳 PAGO REALIZADO</span></div>', unsafe_allow_html=True)
@@ -690,22 +859,34 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                             clase_badge = "status-proceso"
                         st.markdown(f'<div style="text-align:right;"><span class="status-badge {clase_badge}">{estado_texto}</span></div>', unsafe_allow_html=True)
 
-            # Clasificar y renderizar en los paneles
+            # Clasificar y renderizar en los paneles (paginado de a 8, con "Ver más")
+            TAMANO_PAGINA_OPS = 8
+
             with col_izquierda:
                 st.markdown("#### 🚢 En Tránsito")
                 ops_transito = ops_resumen[ops_resumen['ESTADO DE DISTRIBUCION'].str.lower().str.replace('á', 'a').str.contains('transito|despachar', na=False)]
                 if not ops_transito.empty:
-                    for _, row in ops_transito.iterrows():
-                        renderizar_tarjeta_operacion(row)
+                    n_mostrar_transito = st.session_state.get('n_mostrar_transito', TAMANO_PAGINA_OPS)
+                    for _, row in ops_transito.head(n_mostrar_transito).iterrows():
+                        renderizar_tarjeta_operacion(row, "transito")
+                    if len(ops_transito) > n_mostrar_transito:
+                        if st.button("Ver más", key="ver_mas_transito", use_container_width=True):
+                            st.session_state['n_mostrar_transito'] = n_mostrar_transito + TAMANO_PAGINA_OPS
+                            st.rerun()
                 else:
                     st.markdown('<div class="empty-state-text">No hay operaciones registradas en tránsito.</div>', unsafe_allow_html=True)
-                    
+
             with col_derecha:
                 st.markdown("#### 🏢 Ya Llegó / Entregado")
                 ops_entregadas = ops_resumen[~ops_resumen['ESTADO DE DISTRIBUCION'].str.lower().str.replace('á', 'a').str.contains('transito|despachar', na=False)]
                 if not ops_entregadas.empty:
-                    for _, row in ops_entregadas.iterrows():
-                        renderizar_tarjeta_operacion(row)
+                    n_mostrar_entregadas = st.session_state.get('n_mostrar_entregadas', TAMANO_PAGINA_OPS)
+                    for _, row in ops_entregadas.head(n_mostrar_entregadas).iterrows():
+                        renderizar_tarjeta_operacion(row, "entregadas")
+                    if len(ops_entregadas) > n_mostrar_entregadas:
+                        if st.button("Ver más", key="ver_mas_entregadas", use_container_width=True):
+                            st.session_state['n_mostrar_entregadas'] = n_mostrar_entregadas + TAMANO_PAGINA_OPS
+                            st.rerun()
                 else:
                     st.markdown('<div class="empty-state-text">No hay operaciones finalizadas registradas.</div>', unsafe_allow_html=True)
 
@@ -792,12 +973,11 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                 df_resumen_tabla = df_resumen_tabla.rename(columns={'COP_Grafico': 'VALOR NACIONALIZADO COP'})
             
             st.dataframe(
-                df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura'}), 
-                use_container_width=True, 
+                df_resumen_tabla.rename(columns={'EMISIÓN FRA':'Fecha Emisión FRA', 'FRA':'Factura'}),
+                use_container_width=True,
                 hide_index=True
             )
 
-    
 # =========================================================================
     # --- MÓDULO 2: DETALLE DE OPERACIÓN (FILTRO POR ESTADO DE DISTRIBUCION) --
     # =========================================================================
@@ -839,7 +1019,9 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
             st.error("⚠️ La base de datos maestro no se ha cargado correctamente.")
         else:
             lista_ops = sorted(df_maestro['OPERACIÓN'].dropna().unique())
-            op_sel = st.selectbox("Seleccione el Código Operativo (M):", lista_ops, index=0)
+            if 'select_operacion_detalle' in st.session_state and st.session_state['select_operacion_detalle'] not in lista_ops:
+                del st.session_state['select_operacion_detalle']
+            op_sel = st.selectbox("Seleccione el Código Operativo (M):", lista_ops, key="select_operacion_detalle")
             st.write("---")
             
             df_op = df_maestro[df_maestro['OPERACIÓN'] == op_sel].copy()
@@ -1062,7 +1244,17 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
             df_pendientes_despacho = df_plan_copy[mascara_sin_bl].copy()
         else:
             df_pendientes_despacho = df_plan_copy
-        
+
+        # --- EXCLUSIÓN DE CANTIDADES MARCADAS EN AZUL Y MENORES A 30 UNIDADES (NO SE VAN A ENVIAR / SE CANCELAN) ---
+        # Si está en azul pero supera las 30 unidades, sí se envía y se mantiene en el listado.
+        if 'QTY_NO_SE_ENVIA' in df_pendientes_despacho.columns:
+            qty_numerico = pd.to_numeric(df_pendientes_despacho['QTY'], errors='coerce').fillna(0)
+            mascara_cancelado = df_pendientes_despacho['QTY_NO_SE_ENVIA'] & (qty_numerico < 30)
+            unidades_canceladas = qty_numerico[mascara_cancelado].sum()
+            df_pendientes_despacho = df_pendientes_despacho[~mascara_cancelado].copy()
+            if unidades_canceladas > 0:
+                st.caption(f"ℹ️ Se excluyeron {int(unidades_canceladas)} unidades resaltadas en azul y con menos de 30 unidades (no se enviarán ).")
+
         if not df_pendientes_despacho.empty:
             df_pendientes_despacho['Modelo'] = df_pendientes_despacho['Modelo'].fillna('Modelo desconocido').astype(str)
             df_pendientes_despacho['Description'] = df_pendientes_despacho['Description'].fillna('Sin descripción técnica.').astype(str)
@@ -1125,3 +1317,4 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
                     st.markdown(html_tarjeta, unsafe_allow_html=True)
         else:
             st.info("No se registran referencias pendientes por despachar en el plan actual.")
+
