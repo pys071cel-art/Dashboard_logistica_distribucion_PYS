@@ -532,7 +532,12 @@ if 'ir_a_detalle_operacion' in st.session_state:
 with st.sidebar:
     st.write("")
     if logo:
-        st.image(logo, width='stretch')
+        try:
+            # Streamlit reciente (ej. el desplegado en la nube): parámetro unificado width
+            st.image(logo, width='stretch')
+        except TypeError:
+            # Streamlit local más antiguo (1.39.0): no conoce width='stretch'
+            st.image(logo, use_column_width=True)
     else:
         st.markdown("<h2 style='margin-bottom:0px; font-size:22px;'>PROYECTOS Y SERVICIOS</h2>", unsafe_allow_html=True)
         
@@ -606,11 +611,11 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
             if not operaciones_mes:
                 texto_barra = f"Sin operaciones programadas para llegar en {etiqueta_mes_actual}."
             elif len(operaciones_mes) == 1:
-                texto_barra = f"Operaciones pendientes por llegar este mes:&nbsp;<strong>{operaciones_mes[0]}</strong>."
+                texto_barra = f"En este mes llega la operación:&nbsp;<strong>{operaciones_mes[0]}</strong>."
             else:
                 primeros = ", ".join(operaciones_mes[:-1])
                 ultimo = operaciones_mes[-1]
-                texto_barra = f"Operaciones pendientes por llegar este mes:&nbsp;<strong>{primeros}&nbsp;y&nbsp;{ultimo}</strong>."
+                texto_barra = f"En este mes llegan las operaciones:&nbsp;<strong>{primeros}&nbsp;y&nbsp;{ultimo}</strong>."
 
             st.markdown(f"""
             <div style="background-color:#F5F4FF; border:1px solid #E3E1FA; border-radius:10px; padding:9px 16px; font-size:14px; color:#1E293B; display:flex; align-items:center;">
@@ -1241,19 +1246,30 @@ elif df_plan is not None and df_maestro is not None and df_pagos is not None:
         if 'BL' in df_plan_copy.columns:
             df_plan_copy['BL_aux'] = df_plan_copy['BL'].astype(str).str.strip().str.upper()
             mascara_sin_bl = (df_plan_copy['BL'].isna()) | (df_plan_copy['BL_aux'] == 'NAN') | (df_plan_copy['BL_aux'] == '') | (df_plan_copy['BL_aux'] == 'POR ASIGNAR')
-            df_pendientes_despacho = df_plan_copy[mascara_sin_bl].copy()
+
+            # Un BL asignado solo deja de estar en producción cuando ya fue
+            # registrado en la tabla maestra (operación en tránsito).
+            bl_maestro = set()
+            if df_maestro is not None and 'BL' in df_maestro.columns:
+                bl_maestro = set(
+                    df_maestro['BL'].dropna().astype(str).str.strip().str.upper()
+                )
+                bl_maestro -= {'', 'NAN', 'POR ASIGNAR'}
+
+            mascara_bl_pendiente = ~df_plan_copy['BL_aux'].isin(bl_maestro)
+            df_pendientes_despacho = df_plan_copy[mascara_sin_bl | mascara_bl_pendiente].copy()
         else:
             df_pendientes_despacho = df_plan_copy
 
-        # --- EXCLUSIÓN DE CANTIDADES MARCADAS EN AZUL Y MENORES A 30 UNIDADES (NO SE VAN A ENVIAR / SE CANCELAN) ---
-        # Si está en azul pero supera las 30 unidades, sí se envía y se mantiene en el listado.
+        # --- EXCLUSIÓN DE CANTIDADES MARCADAS EN AZUL Y MENORES A 10 UNIDADES (NO SE VAN A ENVIAR / SE CANCELAN) ---
+        # Si está en azul pero supera las 10 unidades, sí se envía y se mantiene en el listado.
         if 'QTY_NO_SE_ENVIA' in df_pendientes_despacho.columns:
             qty_numerico = pd.to_numeric(df_pendientes_despacho['QTY'], errors='coerce').fillna(0)
-            mascara_cancelado = df_pendientes_despacho['QTY_NO_SE_ENVIA'] & (qty_numerico < 30)
+            mascara_cancelado = df_pendientes_despacho['QTY_NO_SE_ENVIA'] & (qty_numerico < 10)
             unidades_canceladas = qty_numerico[mascara_cancelado].sum()
             df_pendientes_despacho = df_pendientes_despacho[~mascara_cancelado].copy()
             if unidades_canceladas > 0:
-                st.caption(f"ℹ️ Se excluyeron {int(unidades_canceladas)} unidades resaltadas en azul y con menos de 30 unidades (no se enviarán ).")
+                st.caption(f"ℹ️ Se excluyeron {int(unidades_canceladas)} unidades resaltadas en azul y con menos de 10 unidades (no se enviarán ).")
 
         if not df_pendientes_despacho.empty:
             df_pendientes_despacho['Modelo'] = df_pendientes_despacho['Modelo'].fillna('Modelo desconocido').astype(str)
